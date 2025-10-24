@@ -1,40 +1,28 @@
-use rand::Rng;
-use ta::DataItem;
+use std::{fs::File, io::BufReader, path::PathBuf};
 
-pub(crate) fn faker_candle(n: usize) -> Vec<DataItem> {
-    let mut rng = rand::rng();
-    let mut price = 100.0;
-    let mut volume = 15120.0;
-    let mut candles = Vec::with_capacity(n);
-    let ratio = 5.0;
-    for _ in 0..n {
-        price += rng.random_range(-5.0..5.0);
-        volume += rng.random_range(-2000.0..2000.0);
+use anyhow::Result;
+use chrono::{DateTime, Utc, serde::ts_microseconds};
+use serde::Deserialize;
 
-        let open = price + rng.random_range(price - 1.0..price + 1.0);
-        let close = price + rng.random_range(price - 1.0..price + 1.0);
-        #[allow(unused_assignments)]
-        let mut high = 0.0;
-        #[allow(unused_assignments)]
-        let mut low = 0.0;
+#[derive(Debug, Deserialize, Clone)]
+pub struct Data {
+    #[serde(alias = "open_price")]
+    pub open: f64,
+    #[serde(alias = "high_price")]
+    pub high: f64,
+    #[serde(alias = "low_price")]
+    pub low: f64,
+    #[serde(alias = "close_price")]
+    pub close: f64,
+    #[serde(rename = "quote_asset_volume")]
+    pub volume: f64,
+    #[allow(dead_code)]
+    #[serde(with = "ts_microseconds")]
+    pub open_time: DateTime<Utc>,
+}
 
-        if open < close {
-            high = rng.random_range(close..close + ratio);
-            low = rng.random_range(open - ratio..open);
-        } else {
-            high = rng.random_range(open..open + ratio);
-            low = rng.random_range(close - ratio..close);
-        }
-
-        let item = DataItem::builder()
-            .open(open)
-            .high(high)
-            .low(low)
-            .close(close)
-            .volume(volume)
-            .build()
-            .unwrap();
-        candles.push(item);
-    }
-    candles
+pub(crate) fn get_data_from_file(filepath: PathBuf) -> Result<Vec<Data>> {
+    let file = File::open(filepath)?;
+    let reader = BufReader::new(file);
+    serde_json::from_reader(reader).map_err(|e| anyhow::Error::msg(e.to_string()))
 }

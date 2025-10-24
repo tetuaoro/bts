@@ -1,57 +1,30 @@
+mod engine;
 mod plot;
 mod utils;
 
-use crate::plot::*;
+use crate::engine::*;
 use crate::utils::*;
 
 use anyhow::*;
-use plotters::prelude::*;
-use plotters::style::full_palette::{BLACK, BLUE, GREEN, GREY_800, ORANGE, RED, WHITE};
 use ta::*;
 
 fn main() -> Result<()> {
-    let candles = faker_candle(34);
+    let items = get_data_from_file("data/btc.json".into())?;
 
-    let opens = candles.iter().map(|c| c.open()).collect::<Vec<_>>();
-    let highs = candles.iter().map(|c| c.high()).collect::<Vec<_>>();
-    let lows = candles.iter().map(|c| c.low()).collect::<Vec<_>>();
-    let closes = candles.iter().map(|c| c.close()).collect::<Vec<_>>();
+    // let candles = items
+    //     .iter()
+    //     .map(|d| Candle {
+    //         open: d.open(),
+    //         high: d.high(),
+    //         low: d.low(),
+    //         close: d.close(),
+    //         volume: d.volume(),
+    //     })
+    //     .collect::<Vec<_>>();
 
-    let root = SVGBackend::new("data/stock.svg", (2048, 1024)).into_drawing_area();
-    root.fill(&BLACK)?;
+    // let mut backtest = Backtest::new(candles);
 
-    let rng = 0..candles.len() as i32;
-    let from = closes
-        .iter()
-        .min_by(|a, b| a.partial_cmp(&b).unwrap())
-        .copied()
-        .ok_or(anyhow::Error::msg(""))?;
-    let to = closes
-        .iter()
-        .max_by(|a, b| a.partial_cmp(&b).unwrap())
-        .copied()
-        .ok_or(anyhow::Error::msg(""))?;
+    // backtest.iter().for_each(|d| println!("{d:?}"));
 
-    let mut chart = ChartBuilder::on(&root)
-        .x_label_area_size(30)
-        .y_label_area_size(50)
-        .build_cartesian_2d(rng.clone(), from..to)?;
-
-    chart
-        .configure_mesh()
-        .label_style(&WHITE)
-        .bold_line_style(GREY_800)
-        .draw()?;
-
-    draw_lines(&mut chart, opens, &GREEN)?;
-    draw_lines(&mut chart, highs, &RED)?;
-    draw_lines(&mut chart, lows, &BLUE)?;
-    draw_lines(&mut chart, closes, &ORANGE.mix(0.5))?;
-
-    // To avoid the IO failure being ignored silently, we manually call the present function
-    root.present().map_err(|_| {
-        Error::msg(
-            "Unable to write result to file, please make sure 'data' dir exists under current dir",
-        )
-    })
+    Ok(())
 }
