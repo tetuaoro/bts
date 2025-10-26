@@ -1,61 +1,307 @@
 use std::collections::VecDeque;
 
+use anyhow::{Error, Result};
+use ta::{Close, High, Low, Open, Volume};
+
 #[derive(Debug, Clone)]
 pub struct Candle {
-    pub open: f64,
-    pub high: f64,
-    pub low: f64,
-    pub close: f64,
-    pub volume: f64,
+    open: f64,
+    high: f64,
+    low: f64,
+    close: f64,
+    volume: f64,
+}
+
+impl From<(f64, f64, f64, f64, f64)> for Candle {
+    fn from((open, high, low, close, volume): (f64, f64, f64, f64, f64)) -> Self {
+        Self {
+            open,
+            high,
+            low,
+            close,
+            volume,
+        }
+    }
+}
+
+impl Open for Candle {
+    fn open(&self) -> f64 {
+        self.open
+    }
+}
+
+impl High for Candle {
+    fn high(&self) -> f64 {
+        self.high
+    }
+}
+
+impl Low for Candle {
+    fn low(&self) -> f64 {
+        self.low
+    }
+}
+
+impl Close for Candle {
+    fn close(&self) -> f64 {
+        self.close
+    }
+}
+
+impl Volume for Candle {
+    fn volume(&self) -> f64 {
+        self.volume
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum PositionSide {
+    Long,
+    Short,
+}
+
+#[derive(Debug, Clone)]
+pub struct Position {
+    side: PositionSide,
+    entry_price: f64,
+    quantity: f64,
+}
+
+impl From<(PositionSide, f64, f64)> for Position {
+    fn from((side, entry_price, quantity): (PositionSide, f64, f64)) -> Self {
+        Self {
+            side,
+            entry_price,
+            quantity,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum PositionEventType {
+    Open(PositionSide),
+    Close,
+}
+
+#[derive(Debug, Clone)]
+pub struct PositionEvent {
+    candle_index: usize,
+    price: f64,
+    event_type: PositionEventType,
 }
 
 pub struct Backtest {
     data: VecDeque<Candle>,
-    current_index: usize,
+    position: Option<Position>,
+    balance: f64,
+    index: usize,
+    position_history: Vec<PositionEvent>,
 }
 
 impl Backtest {
-    pub fn new(data: Vec<Candle>) -> Self {
+    pub fn new(data: Vec<Candle>, initial_balance: f64) -> Self {
         Self {
             data: VecDeque::from(data),
-            current_index: 0,
+            position: None,
+            balance: initial_balance,
+            index: 0,
+            position_history: Vec::new(),
         }
     }
 
-    pub fn current_candle(&self) -> Option<&Candle> {
-        self.data.get(self.current_index)
-    }
-
-    pub fn next(&mut self) -> Option<&Candle> {
-        if self.current_index < self.data.len() - 1 {
-            self.current_index += 1;
-            self.current_candle()
-        } else {
-            None
+    pub fn open_position(&mut self, position: Position) -> Result<()> {
+        if self.position.is_some() {
+            return Err(Error::msg("Already opened"));
         }
+
+        let (side, price, quantity) = (position.side, position.entry_price, position.quantity);
+        let cost = price * quantity;
+        if self.balance < cost {
+            return Err(Error::msg("Unbalanced wallet"));
+        }
+
+        match side {
+            PositionSide::Long => self.balance -= cost,
+            PositionSide::Short => self.balance += cost,
+        }
+
+        self.position = Some(Position {
+            side: side.clone(),
+            entry_price: price,
+            quantity,
+        });
+
+        self.position_history.push(PositionEvent {
+            candle_index: self.index.saturating_sub(1),
+            price,
+            event_type: PositionEventType::Open(side),
+        });
+
+        Ok(())
     }
 
-    pub fn reset(&mut self) {
-        self.current_index = 0;
-    }
+    pub fn close_position(&mut self, exit_price: f64) -> Result<f64> {
+        if let Some(position) = self.position.take() {
+            let value = match position.side {
+                PositionSide::Long => {
+                    let value = exit_price * position.quantity;
+                    self.balance += value;
+                    value
+                }
+                PositionSide::Short => {
+                    self.balance -= position.entry_price * position.quantity;
+                    let profit = (position.entry_price - exit_price) * position.quantity;
+                    self.balance += profit;
+                    profit
+                }
+            };
 
-    pub fn iter(&mut self) -> BacktestIterator<'_> {
-        BacktestIterator { backtest: self }
+            self.position_history.push(PositionEvent {
+                candle_index: self.index.saturating_sub(1),
+                price: exit_price,
+                event_type: PositionEventType::Close,
+            });
+            return Ok(value);
+        }
+
+        Err(Error::msg("No opened position"))
     }
 }
 
-pub struct BacktestIterator<'a> {
-    backtest: &'a mut Backtest,
-}
-
-impl<'a> Iterator for BacktestIterator<'a> {
+impl Iterator for Backtest {
     type Item = Candle;
 
     fn next(&mut self) -> Option<Self::Item> {
-        if let Some(candle) = self.backtest.next() {
-            Some(candle.clone())
-        } else {
-            None
+        let item = self.data.get(self.index).cloned();
+        self.index += 1;
+        item
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::PositionSide::*;
+    use super::*;
+
+    fn get_data() -> Vec<Candle> {
+        vec![
+            Candle {
+                open: 100.0,
+                high: 111.0,
+                low: 99.0,
+                close: 110.0,
+                volume: 1.0,
+            },
+            Candle {
+                open: 110.0,
+                high: 112.0,
+                low: 100.0,
+                close: 120.0,
+                volume: 1.0,
+            },
+            Candle {
+                open: 120.0,
+                high: 121.0,
+                low: 100.0,
+                close: 110.0,
+                volume: 1.0,
+            },
+        ]
+    }
+
+    #[test]
+    fn test_long_position() {
+        let data = get_data();
+        let balance = 1000.0;
+        let mut bt = Backtest::new(data, balance);
+        let mut _counter = 0;
+        while let Some(candle) = bt.next() {
+            let price = candle.close();
+            if _counter == 0 {
+                let result = bt.open_position((Long, price, 1.0).into()); // balance (1000.0) -= 110.0 * 1.0 => 890.0;
+                assert!(result.is_ok());
+                assert!(bt.position.is_some());
+                assert!(bt.balance < balance);
+            }
+            if _counter == 1 {
+                let result = bt.close_position(price);
+                assert!(result.is_ok());
+                assert!(bt.position.is_none());
+                assert!(bt.balance > balance);
+            }
+            _counter += 1;
+        }
+    }
+
+    #[test]
+    fn test_short_position() {
+        let data = get_data();
+        let balance = 1000.0;
+        let mut bt = Backtest::new(data, balance);
+        let mut _counter = 0;
+        while let Some(candle) = bt.next() {
+            let price = candle.close();
+            if _counter == 1 {
+                let result = bt.open_position((Short, price, 1.0).into());
+                assert!(result.is_ok());
+                assert!(bt.position.is_some());
+                assert!(bt.balance > balance);
+            }
+            if _counter == 2 {
+                let result = bt.close_position(price);
+                assert!(result.is_ok());
+                assert!(bt.position.is_none());
+                assert!(bt.balance > balance);
+            }
+            _counter += 1;
+        }
+    }
+
+    #[test]
+    fn test_failed_long_position() {
+        let data = get_data();
+        let balance = 1000.0;
+        let mut bt = Backtest::new(data, balance);
+        let mut _counter = 0;
+        while let Some(candle) = bt.next() {
+            let price = candle.close();
+            if _counter == 1 {
+                let result = bt.open_position((Long, price, 1.0).into()); // balance (1000.0) -= 110.0 * 1.0 => 890.0;
+                assert!(result.is_ok());
+                assert!(bt.position.is_some());
+                assert!(bt.balance < balance);
+            }
+            if _counter == 2 {
+                let result = bt.close_position(price);
+                assert!(result.is_ok());
+                assert!(bt.position.is_none());
+                assert!(bt.balance < balance);
+            }
+            _counter += 1;
+        }
+    }
+
+    #[test]
+    fn test_failed_short_position() {
+        let data = get_data();
+        let balance = 1000.0;
+        let mut bt = Backtest::new(data, balance);
+        let mut _counter = 0;
+        while let Some(candle) = bt.next() {
+            let price = candle.close();
+            if _counter == 0 {
+                let result = bt.open_position((Short, price, 1.0).into());
+                assert!(result.is_ok());
+                assert!(bt.position.is_some());
+                assert!(bt.balance > balance);
+            }
+            if _counter == 1 {
+                let result = bt.close_position(price);
+                assert!(result.is_ok());
+                assert!(bt.position.is_none());
+                assert!(bt.balance < balance);
+            }
+            _counter += 1;
         }
     }
 }
