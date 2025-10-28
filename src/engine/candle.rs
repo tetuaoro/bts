@@ -5,6 +5,7 @@ pub struct Candle {
     low: f64,
     close: f64,
     volume: f64,
+    bid: f64,
 }
 
 impl From<(f64, f64, f64, f64, f64)> for Candle {
@@ -15,6 +16,20 @@ impl From<(f64, f64, f64, f64, f64)> for Candle {
             low,
             close,
             volume,
+            bid: 0.0,
+        }
+    }
+}
+
+impl From<(f64, f64, f64, f64, f64, f64)> for Candle {
+    fn from((open, high, low, close, volume, bid): (f64, f64, f64, f64, f64, f64)) -> Self {
+        Self {
+            open,
+            high,
+            low,
+            close,
+            volume,
+            bid,
         }
     }
 }
@@ -38,5 +53,13 @@ impl Candle {
 
     pub fn volume(&self) -> f64 {
         self.volume
+    }
+
+    pub fn ask(&self) -> f64 {
+        self.volume - self.bid
+    }
+
+    pub fn bid(&self) -> f64 {
+        self.bid
     }
 }

@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 mod candle;
 mod position;
 
@@ -24,6 +26,14 @@ impl Backtest {
             index: 0,
             position_history: Vec::new(),
         }
+    }
+
+    pub fn balance(&self) -> f64 {
+        self.balance
+    }
+
+    pub fn position_history(&self) -> Vec<PositionEvent> {
+        self.position_history.clone()
     }
 
     pub fn open_position(&mut self, position: Position) -> Result<()> {

@@ -18,6 +18,7 @@ use serde::Deserialize;
 // "taker_buy_base_volume": 211.69336,
 // "taker_buy_quote_volume": 26344187.9144172,
 // "ignore": 0.0
+
 #[derive(Debug, Deserialize, Clone)]
 pub struct Data {
     #[serde(alias = "open_price")]
@@ -31,7 +32,7 @@ pub struct Data {
     #[serde(rename = "quote_asset_volume")]
     volume: f64,
     #[serde(rename = "taker_buy_quote_volume")]
-    ask: f64,
+    bid: f64,
     #[serde(with = "ts_microseconds")]
     open_time: DateTime<Utc>,
     #[serde(with = "ts_microseconds")]
@@ -60,11 +61,11 @@ impl Data {
     }
 
     pub fn ask(&self) -> f64 {
-        self.ask
+        self.volume - self.bid
     }
 
     pub fn bid(&self) -> f64 {
-        self.volume - self.ask
+        self.bid
     }
 
     pub fn open_time(&self) -> DateTime<Utc> {
@@ -76,7 +77,7 @@ impl Data {
     }
 }
 
-pub(crate) fn get_data_from_file(filepath: PathBuf) -> Result<Vec<Data>> {
+pub fn get_data_from_file(filepath: PathBuf) -> Result<Vec<Data>> {
     let file = File::open(filepath)?;
     let reader = BufReader::new(file);
     serde_json::from_reader(reader).map_err(|e| Error::msg(e.to_string()))
