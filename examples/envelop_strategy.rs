@@ -23,7 +23,7 @@ fn main() -> Result<()> {
         let (high, low) = (candle.high(), candle.low());
 
         if low < long_limit {
-            let quantity = (15.0 * bt.balance() / 100.0) / long_limit;
+            let quantity = bt.balance().how_many(15.0) / long_limit;
             if let Result::Ok(pos) =
                 bt.open_position((PositionSide::Long, long_limit, quantity).into())
             {
