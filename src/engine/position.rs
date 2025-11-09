@@ -1,24 +1,14 @@
 type ID = u32;
 
-use std::fmt;
-
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[doc(alias = "Side")]
 #[derive(Debug, Clone, PartialEq)]
 pub enum PositionSide {
     Long,
     Short,
-}
-
-impl fmt::Display for PositionSide {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            PositionSide::Long => write!(f, "LONG"),
-            PositionSide::Short => write!(f, "SHORT"),
-        }
-    }
 }
 
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
@@ -59,6 +49,17 @@ impl Position {
             PositionSide::Long => (exit_price - self.entry_price) * self.quantity,
             PositionSide::Short => (self.entry_price - exit_price) * self.quantity,
         }
+    }
+
+    pub fn profit_change(&self, exit_price: f64) -> f64 {
+        let mut v1 = self.entry_price * self.quantity;
+        let mut v2 = exit_price * self.quantity;
+        if self.side == PositionSide::Short {
+            let temp = v1;
+            v1 = v2;
+            v2 = temp;
+        }
+        (v2 - v1) / v1 * 100.0
     }
 }
 
@@ -116,24 +117,6 @@ impl From<(ID, usize, PositionSide, f64)> for PositionEvent {
             open: (pos_idx, side, price),
             close: None,
         }
-    }
-}
-
-impl fmt::Display for PositionEvent {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        if let Some((_, price)) = self.close {
-            return write!(
-                f,
-                "Event(id {} len {} opened {} at {:.2} and closed at {:.2})",
-                self.id,
-                self.len(),
-                self.open.1,
-                self.open.2,
-                price,
-            );
-        }
-
-        write!(f, "Event(id {} opened at {:.2})", self.id, self.open.1)
     }
 }
 

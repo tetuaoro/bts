@@ -20,36 +20,25 @@ fn main() -> Result<()> {
         let close = candle.close();
         let output = sma.next(close);
         let long_limit = output.subpercent(5.0);
-        let (high, low) = (candle.high(), candle.low());
+        let low = candle.low();
 
         if low < long_limit {
             let quantity = bt.current_balance().how_many(15.0) / long_limit;
             let position = Position::from((PositionSide::Long, long_limit, quantity));
-            if let Result::Ok(_) = bt.open_position(position.clone()) {
-                println!("opened {}", position.id());
-            }
+            _ = bt.open_position(position.clone());
         }
 
-        if output < high && output > low {
-            let open_positions = bt.open_positions();
-            open_positions
-                .iter()
-                .filter(|p| {
-                    let cost = p.entry_price() * p.quantity();
-                    let profit = p.estimate_profit(output);
-                    cost.addpercent(5.0) < profit
-                })
-                .for_each(|p| {
-                    if let Result::Ok(value) = bt.close_position(p.id(), output) {
-                        let event = bt.find_event_by_position(&p);
-                        if let Some(evt) = event {
-                            println!("closed {} value: {value} -- {}", p.id(), evt);
-                        } else {
-                            println!("closed {} value: {value}", p.id());
-                        }
-                    }
-                });
-        }
+        let positions = bt.open_positions();
+        positions
+            .iter()
+            .filter(|p| {
+                let profit = p.profit_change(close);
+                // more than 5%
+                profit > 5.0
+            })
+            .for_each(|p| {
+                _ = bt.close_position(p.id(), close);
+            });
     }
 
     let f = candles.first().unwrap();
@@ -58,20 +47,20 @@ fn main() -> Result<()> {
 
     let exit_price = l.close();
     if let Result::Ok(sum) = bt.close_all_positions(exit_price) {
-        println!("\nclose all positions sum: {sum}");
+        println!("close all positions sum: {sum}");
     }
 
-    let buy_and_hold = 100.0 * (initial_balance * l.close() / f.close()) / initial_balance;
     let new_balance = bt.current_balance();
-    let performance = 100.0 * new_balance / initial_balance;
-    let performance = if performance < 100.0 {
-        -(100.0 - performance)
-    } else {
-        performance - 100.0
-    };
+    let performance = (new_balance - initial_balance) / initial_balance * 100.0;
+    let f_quant = initial_balance / f.close();
+    let l_cost = l.close() * f_quant;
+    let buy_and_hold_performance = (l_cost - initial_balance) / initial_balance * 100.0;
     let count_position = bt.position_history().len();
+
+    println!("initial balance {initial_balance}");
+    println!("new balance {new_balance:.3} USD\ntrades {count_position} / total ticks {n}");
     println!(
-        "new balance {new_balance} USD\ntrades {count_position} / total ticks {n}\nperformance {performance:.3}%\nbuy and hold {buy_and_hold:.3}%"
+        "performance {performance:.3}%\nbuy and hold {buy_and_hold_performance:.3}% ({l_cost:.3} USD)"
     );
 
     Ok(())
