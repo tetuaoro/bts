@@ -30,3 +30,14 @@ impl PercentCalculus for f64 {
         percent.mul(self.div(100.0))
     }
 }
+
+pub trait TruncCalculus {
+    fn trunc_at(self, at: u32) -> Self;
+}
+
+impl TruncCalculus for f64 {
+    fn trunc_at(self, at: u32) -> Self {
+        let factor = 10.0_f64.powi(at as i32);
+        (self * factor).trunc() / factor
+    }
+}

@@ -32,7 +32,7 @@ fn main() -> anyhow::Result<()> {
             _ = bt.open_position(position.into());
         }
 
-        bt.open_positions()
+        bt.positions()
             .iter()
             .filter(|p| {
                 let profit = p.profit_change(close);
@@ -58,7 +58,7 @@ fn main() -> anyhow::Result<()> {
     let fc_quant = initial_balance / fc.close();
     let lc_cost = lc.close() * fc_quant;
     let buy_and_hold_performance = (lc_cost - initial_balance) / initial_balance * 100.0;
-    let count_position = bt.position_history().len();
+    let count_position = bt.events().len();
 
     println!("initial balance {initial_balance}");
     println!("new balance {new_balance:.3} USD\ntrades {count_position} / total ticks {n}");

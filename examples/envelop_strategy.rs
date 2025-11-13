@@ -25,12 +25,12 @@ fn main() -> anyhow::Result<()> {
                 PositionSide::Long,
                 long_limit,
                 quantity,
-                PositionExitRule::Market,
+                PositionExitRule::Limit(long_limit.addpercent(5.0)),
             );
             _ = bt.open_position(position.into());
         }
 
-        bt.open_positions()
+        bt.positions()
             .iter()
             .filter(|p| {
                 let profit = p.profit_change(close);
@@ -56,7 +56,7 @@ fn main() -> anyhow::Result<()> {
     let f_quant = initial_balance / f.close();
     let l_cost = l.close() * f_quant;
     let buy_and_hold_performance = (l_cost - initial_balance) / initial_balance * 100.0;
-    let count_position = bt.position_history().len();
+    let count_position = bt.events().len();
 
     println!("initial balance {initial_balance}");
     println!("new balance {new_balance:.3} USD\ntrades {count_position} / total ticks {n}");

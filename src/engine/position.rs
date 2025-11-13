@@ -4,15 +4,21 @@ type ID = u32;
 use serde::{Deserialize, Serialize};
 
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[derive(Debug, Clone)]
+pub enum PriceType {
+    Usd(f64),
+    Percent(f64),
+}
+
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[doc(alias = "ExitRule")]
 #[derive(Debug, Clone)]
 pub enum PositionExitRule {
-    Market,
-    Limit(f64),
-    StopLoss(f64),
-    TakeProfit(f64),
-    TrailingStop(f64),
-    TakeProfitAndStopLoss((f64, f64)),
+    Limit(PriceType),
+    StopLoss(PriceType),
+    TakeProfit(PriceType),
+    TrailingStop(PriceType),
+    TakeProfitAndStopLoss((PriceType, PriceType)),
 }
 
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
@@ -34,13 +40,6 @@ pub struct Position {
 }
 
 impl Position {
-    pub fn random_id() -> ID {
-        use rand::Rng;
-
-        let mut rng = rand::rng();
-        rng.random_range(1..1000)
-    }
-
     pub fn id(&self) -> ID {
         self.id
     }
@@ -49,8 +48,8 @@ impl Position {
         self.id = id;
     }
 
-    pub fn side(&self) -> PositionSide {
-        self.side.clone()
+    pub fn side(&self) -> &PositionSide {
+        &self.side
     }
 
     pub fn quantity(&self) -> f64 {
@@ -92,7 +91,7 @@ type P1 = (PositionSide, f64, f64, PositionExitRule);
 impl From<P1> for Position {
     fn from((side, entry_price, quantity, exit_rule): P1) -> Self {
         Self {
-            id: Self::random_id(),
+            id: 0,
             side,
             quantity,
             exit_rule,
@@ -115,10 +114,8 @@ impl PositionEvent {
         self.id
     }
 
-    pub fn len(&self) -> usize {
-        self.close
-            .map(|(pos_idx, _)| pos_idx - self.open.0)
-            .unwrap_or_default()
+    pub fn len(&self) -> Option<usize> {
+        self.close.map(|(pos_idx, _)| pos_idx - self.open.0)
     }
 
     pub fn close(&mut self, pos_idx: usize, price: f64) {
@@ -142,9 +139,14 @@ mod tests {
 
     #[test]
     fn test_position_event() {
-        let position: Position = (PositionSide::Long, 1.0, 1.0, PositionExitRule::Market).into();
+        let position = Position::from((
+            PositionSide::Long,
+            1.0,
+            1.0,
+            PositionExitRule::Limit(PriceType::Usd(1.0)),
+        ));
         let mut event = PositionEvent::from((position.id, 1, position.side, position.entry_price));
         event.close(3, 2.0);
-        assert_eq!(event.len(), 2);
+        assert_eq!(event.len(), Some(2));
     }
 }

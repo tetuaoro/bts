@@ -7,7 +7,10 @@ mod bt;
 pub use candle::*;
 pub use position::*;
 
-use crate::errors::{Error, Result};
+use crate::{
+    PercentCalculus, TruncCalculus,
+    errors::{Error, Result},
+};
 
 #[derive(Debug)]
 pub struct Backtest {
@@ -40,26 +43,17 @@ impl Backtest {
         let positions_value: f64 = self
             .positions
             .iter()
-            .map(|p| match p.side() {
-                PositionSide::Long => (current_price - p.entry_price()) * p.quantity(),
-                PositionSide::Short => (p.entry_price() - current_price) * p.quantity(),
-            })
+            .map(|p| p.estimate_profit(current_price))
             .sum();
         self.balance + positions_value
     }
 
-    pub fn open_positions(&self) -> Vec<Position> {
+    pub fn positions(&self) -> Vec<Position> {
         self.positions.clone()
     }
 
-    pub fn find_event_by_position(&self, position: &Position) -> Option<&PositionEvent> {
-        self.position_history
-            .iter()
-            .find(|p| p.id() == position.id())
-    }
-
-    pub fn position_history(&self) -> Vec<PositionEvent> {
-        self.position_history.clone()
+    pub fn events(&self) -> &Vec<PositionEvent> {
+        &self.position_history
     }
 
     pub fn open_position(&mut self, position: Position) -> Result<()> {
@@ -76,10 +70,10 @@ impl Backtest {
             PositionSide::Short => self.balance -= cost,
         }
 
-        let mut position = position;
+        let mut position = position.to_owned();
         position.set_id(self.index as u32);
 
-        let event = (position.id(), self.index, side, price);
+        let event = (position.id(), self.index, side.to_owned(), price);
         self.positions.push(position);
         self.position_history.push(event.into());
 
@@ -129,6 +123,31 @@ impl Backtest {
         self.positions.clear();
 
         Ok(value)
+    }
+
+    pub fn execute_exit_rules(&self, exit_price: f64) -> Result<()> {
+        let positions = self.positions.clone();
+        positions.iter().for_each(|p| {
+            let entry_price = p.entry_price();
+            let _is_done = match p.exit_rule() {
+                PositionExitRule::Limit(_type) | PositionExitRule::StopLoss(_type) => match _type {
+                    PriceType::Usd(rule_price) => rule_price == &exit_price,
+                    PriceType::Percent(rule_percent) => {
+                        let rule_price = if p.side() == &PositionSide::Long {
+                            entry_price.addpercent(*rule_percent)
+                        } else {
+                            entry_price.subpercent(*rule_percent)
+                        };
+                        rule_price.trunc_at(3) == exit_price.trunc_at(3)
+                    }
+                },
+                PositionExitRule::TakeProfit(_) => todo!(),
+                PositionExitRule::TrailingStop(_) => todo!(),
+                PositionExitRule::TakeProfitAndStopLoss(_) => todo!(),
+            };
+        });
+
+        Ok(())
     }
 
     pub fn reset(&mut self) {
