@@ -13,6 +13,8 @@ pub enum Error {
     OrderNotFound,
     #[error("Negative or zero balance")]
     NegZeroBalance,
+    #[error("Unreacheable context: {0}")]
+    Unreachable(String),
     #[error("{0}")]
     IoError(#[from] std::io::Error),
     #[cfg(feature = "serde")]

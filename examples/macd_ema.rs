@@ -16,35 +16,55 @@ fn main() -> anyhow::Result<()> {
         .collect::<Vec<_>>();
 
     let initial_balance = 1_000.0;
-    let mut bt = Backtest::new(candles.clone(), initial_balance);
+    let mut bt = Backtest::new(candles.clone(), initial_balance)?;
     let mut ema = ExponentialMovingAverage::new(100)?;
     let mut macd = MovingAverageConvergenceDivergence::default();
 
-    let result = bt.run(|bt, candle| {
+    bt.run(|bt, candle| {
         let close = candle.close();
         let output = ema.next(close);
         let MovingAverageConvergenceDivergenceOutput { histogram, .. } = macd.next(close);
 
-        if close > output && histogram > 0.0 {
-            let quantity = 999.0 / close;
+        let free_balance = bt.free_balance()?;
+        // max trade: 3.69245%, max profit: 100%
+        let amount = free_balance.how_many(3.69245);
+
+        // 21: minimum to trade
+        if amount > 21.0 && close > output && histogram > 0.0 {
+            let quantity = amount / close;
             let order = (
                 OrderType::Market(close),
                 OrderType::TakeProfitAndStopLoss(close * 2.1, 0.0),
                 quantity,
                 OrderSide::Buy,
             );
-            _ = bt.place_order(order.into());
+            bt.place_order(order.into())?;
         }
-    });
 
-    if let Err(e) = result {
-        return Err(e.into());
-    }
+        Ok(())
+    })?;
 
-    println!("n pos {}", bt.positions.len());
+    let first_price = candles.first().unwrap().close();
     let last_price = candles.last().unwrap().close();
-    _ = bt.close_all_positions(last_price);
-    println!("new balance {}", bt.balance());
+
+    bt.close_all_positions(last_price)?;
+
+    let n = candles.len();
+    let close_position_events = bt
+        .events
+        .iter()
+        .filter(|e| matches!(e, Event::DelPosition(_)))
+        .count();
+    println!("trades {close_position_events} / {n}");
+
+    let new_balance = bt.balance();
+    let new_balance_perf = initial_balance.change(new_balance);
+    println!("performance {new_balance:.2} ({new_balance_perf:.2}%)");
+
+    let buy_and_hold = (initial_balance / first_price) * last_price;
+    let buy_and_hold_perf = first_price.change(last_price);
+
+    println!("buy and hold {buy_and_hold:.2} ({buy_and_hold_perf:.2}%)");
 
     Ok(())
 }

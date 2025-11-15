@@ -13,7 +13,7 @@ pub use order::*;
 pub use position::*;
 use wallet::*;
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum Event {
     AddOrder(Order),
     DelOrder(Order),
@@ -58,9 +58,7 @@ impl Backtest {
     /// Places a new order.
     pub fn place_order(&mut self, order: Order) -> Result<()> {
         let cost = order.cost();
-        if !self.wallet.lock(cost) {
-            return Err(Error::InsufficientFunds(cost));
-        }
+        self.wallet.lock(cost)?;
         self.orders.push(order.clone());
         self.events.push(Event::AddOrder(order));
         Ok(())
@@ -70,7 +68,7 @@ impl Backtest {
     pub fn delete_order(&mut self, order: &Order) -> Result<()> {
         if let Some(order_idx) = self.orders.iter().position(|o| o == order) {
             _ = self.orders.remove(order_idx);
-            self.wallet.unlock(order.cost());
+            self.wallet.unlock(order.cost())?;
             self.events.push(Event::DelOrder(order.to_owned()));
             return Ok(());
         }
@@ -78,10 +76,11 @@ impl Backtest {
     }
 
     /// Opens a new position.
-    fn open_position(&mut self, position: Position) {
-        self.wallet.sub(position.cost());
+    fn open_position(&mut self, position: Position) -> Result<()> {
+        self.wallet.sub(position.cost())?;
         self.positions.push(position.clone());
         self.events.push(Event::AddPosition(position));
+        Ok(())
     }
 
     /// Closes an existing position.
@@ -89,7 +88,7 @@ impl Backtest {
         if let Some(pos_idx) = self.positions.iter().position(|p| p == position) {
             // Calculate profit/loss and update wallet
             let profit = position.estimate_profit(exit_price);
-            self.wallet.add(profit + position.cost());
+            self.wallet.add(profit + position.cost())?;
             self.events.push(Event::DelPosition(position.to_owned()));
             _ = self.positions.remove(pos_idx);
             return Ok(profit);
@@ -97,18 +96,15 @@ impl Backtest {
         Err(Error::PositionNotFound)
     }
 
-    pub fn close_all_positions(&mut self, exit_price: f64) {
-        let mut i = 0;
-        while i < self.positions.len() {
-            let position = self.positions[i].clone();
-            _ = self.close_position(&position, exit_price);
-            //todo check this
-            i += 1;
+    pub fn close_all_positions(&mut self, exit_price: f64) -> Result<()> {
+        for position in self.positions.clone() {
+            self.close_position(&position, exit_price)?;
         }
+        Ok(())
     }
 
     /// Executes pending orders based on current candle data.
-    fn execute_orders(&mut self) {
+    fn execute_orders(&mut self) -> Result<()> {
         let current_candle = self.data.get(self.index).cloned();
         if let Some(cc) = current_candle {
             let mut i = 0;
@@ -116,16 +112,17 @@ impl Backtest {
                 let price = self.orders[i].entry_price();
                 if price >= cc.low() && price <= cc.high() {
                     let order = self.orders.remove(i);
-                    self.open_position(Position::from(order));
+                    self.open_position(Position::from(order))?;
                 } else {
                     i += 1;
                 }
             }
         }
+        Ok(())
     }
 
     /// Executes position management (take-profit, stop-loss, trailing stop).
-    fn execute_positions(&mut self) {
+    fn execute_positions(&mut self) -> Result<()> {
         let current_candle = self.data.get(self.index).cloned();
         if let Some(cc) = current_candle {
             let mut i = 0;
@@ -164,7 +161,11 @@ impl Backtest {
                             }
                         }
                     }
-                    _ => false,
+                    _ => {
+                        return Err(Error::Unreachable(
+                            "Allow only TakeProfitAndStopLoss or TrailingStop".into(),
+                        ));
+                    }
                 };
 
                 if should_close {
@@ -194,29 +195,25 @@ impl Backtest {
                         },
                         _ => unreachable!(),
                     };
-                    _ = self.close_position(&position, exit_price);
+                    self.close_position(&position, exit_price)?;
                 } else {
                     i += 1;
                 }
             }
         }
+        Ok(())
     }
 
     /// Runs the backtest, executing the provided function for each candle.
-    /// Throw an error if the wallet balance reaches zero.
     pub fn run<F>(&mut self, mut func: F) -> Result<()>
     where
-        F: FnMut(&mut Self, &Candle),
+        F: FnMut(&mut Self, &Candle) -> Result<()>,
     {
         while self.index < self.data.len() {
-            if self.wallet.balance() <= 0.0 {
-                return Err(Error::NegZeroBalance);
-            }
-
             let candle = &self.data[self.index].clone();
-            func(self, candle);
-            self.execute_orders();
-            self.execute_positions();
+            func(self, candle)?;
+            self.execute_orders()?;
+            self.execute_positions()?;
             self.index += 1;
         }
 
