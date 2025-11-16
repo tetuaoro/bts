@@ -3,7 +3,7 @@ mod order;
 mod position;
 mod wallet;
 
-use std::slice::Iter;
+use std::collections::{VecDeque, vec_deque::Iter};
 
 use crate::{
     PercentCalculus,
@@ -28,10 +28,10 @@ pub enum Event {
 pub struct Backtest {
     index: usize,
     wallet: Wallet,
-    events: Vec<Event>,
-    orders: Vec<Order>,
     data: Vec<Candle>,
-    positions: Vec<Position>,
+    events: Vec<Event>,
+    orders: VecDeque<Order>,
+    positions: VecDeque<Position>,
 }
 
 impl std::ops::Deref for Backtest {
@@ -53,66 +53,82 @@ impl Backtest {
             data,
             index: 0,
             events: Vec::new(),
-            orders: Vec::new(),
-            positions: Vec::new(),
+            orders: VecDeque::new(),
+            positions: VecDeque::new(),
             wallet: Wallet::new(initial_balance)?,
         })
     }
 
+    /// Iteratable order.
     pub fn orders(&self) -> Iter<'_, Order> {
         self.orders.iter()
     }
 
+    /// Iteratable position.
     pub fn positions(&self) -> Iter<'_, Position> {
         self.positions.iter()
     }
 
-    pub fn events(&self) -> Iter<'_, Event> {
+    /// Iteratable events.
+    pub fn events(&self) -> std::slice::Iter<'_, Event> {
         self.events.iter()
     }
 
     /// Places a new order.
     pub fn place_order(&mut self, order: Order) -> Result<()> {
         self.wallet.lock(order.cost())?;
-        self.orders.push(order.clone());
+        self.orders.push_back(order.clone());
         self.events.push(Event::AddOrder(order));
         Ok(())
     }
 
     /// Deletes a pending order.
     pub fn delete_order(&mut self, order: &Order) -> Result<()> {
-        if let Some(order_idx) = self.orders.iter().position(|o| o == order) {
-            let order = self.orders.remove(order_idx);
-            self.wallet.unlock(order.cost())?;
-            self.events.push(Event::DelOrder(order));
-            return Ok(());
-        }
-        Err(Error::OrderNotFound)
+        let order_idx = self
+            .orders
+            .iter()
+            .position(|o| o == order)
+            .ok_or(Error::OrderNotFound)?;
+        let order = self
+            .orders
+            .remove(order_idx)
+            .ok_or(Error::Msg("Failed to remove order".into()))?;
+        self.wallet.unlock(order.cost())?;
+        self.events.push(Event::DelOrder(order));
+        Ok(())
     }
 
     /// Opens a new position.
     fn open_position(&mut self, position: Position) -> Result<()> {
         self.wallet.sub(position.cost())?;
-        self.positions.push(position.clone());
+        self.positions.push_back(position.clone());
         self.events.push(Event::AddPosition(position));
         Ok(())
     }
 
     /// Closes an existing position.
     pub fn close_position(&mut self, position: &Position, exit_price: f64) -> Result<f64> {
-        if let Some(pos_idx) = self.positions.iter().position(|p| p == position) {
-            // Calculate profit/loss and update wallet
-            let profit = position.estimate_profit(exit_price);
-            self.wallet.add(profit + position.cost())?;
-            self.events.push(Event::DelPosition(position.to_owned()));
-            _ = self.positions.remove(pos_idx);
-            return Ok(profit);
+        if exit_price <= 0.0 || !exit_price.is_finite() {
+            return Err(Error::Msg("Invalid exit price".into()));
         }
-        Err(Error::PositionNotFound)
+        let pos_idx = self
+            .positions
+            .iter()
+            .position(|p| p == position)
+            .ok_or(Error::PositionNotFound)?;
+        // Calculate profit/loss and update wallet
+        let profit = position.estimate_profit(exit_price);
+        self.wallet.add(profit + position.cost())?;
+        let position = self
+            .positions
+            .remove(pos_idx)
+            .ok_or(Error::Msg("Failed to remove position".into()))?;
+        self.events.push(Event::DelPosition(position));
+        Ok(profit)
     }
 
     pub fn close_all_positions(&mut self, exit_price: f64) -> Result<()> {
-        for position in self.positions.clone() {
+        while let Some(position) = self.positions.pop_front() {
             self.close_position(&position, exit_price)?;
         }
         Ok(())
@@ -120,102 +136,82 @@ impl Backtest {
 
     /// Executes pending orders based on current candle data.
     fn execute_orders(&mut self) -> Result<()> {
-        let current_candle = self.data.get(self.index).cloned();
-        if let Some(cc) = current_candle {
-            let mut i = 0;
-            while i < self.orders.len() {
-                let price = self.orders[i].entry_price();
-                if price >= cc.low() && price <= cc.high() {
-                    let order = self.orders.remove(i);
-                    self.open_position(Position::from(order))?;
-                } else {
-                    i += 1;
-                }
+        let cc = self.data[self.index].clone();
+        let mut orders = VecDeque::new();
+        while let Some(order) = self.orders.pop_front() {
+            let price = order.entry_price();
+            if price >= cc.low() && price <= cc.high() {
+                self.open_position(Position::from(order))?;
+            } else {
+                orders.push_back(order);
             }
         }
+        self.orders.append(&mut orders);
         Ok(())
     }
 
     /// Executes position management (take-profit, stop-loss, trailing stop).
     fn execute_positions(&mut self) -> Result<()> {
-        let current_candle = self.data.get(self.index).cloned();
-        if let Some(cc) = current_candle {
-            let mut i = 0;
-            while i < self.positions.len() {
-                let position = self.positions[i].clone();
-                let should_close = match position.exit_rule() {
+        let cc = self.data[self.index].clone();
+        let mut positions = VecDeque::new();
+        while let Some(position) = self.positions.pop_front() {
+            let should_close = match position.exit_rule() {
+                Some(OrderType::TakeProfitAndStopLoss(take_profit, stop_loss)) => {
+                    match position.side {
+                        PositionSide::Long => {
+                            (take_profit > &0.0 && take_profit <= &cc.high())
+                                || (stop_loss > &0.0 && stop_loss >= &cc.low())
+                        }
+                        PositionSide::Short => {
+                            (take_profit > &0.0 && take_profit >= &cc.low())
+                                || (stop_loss > &0.0 && stop_loss <= &cc.high())
+                        }
+                    }
+                }
+                Some(OrderType::TrailingStop(trail_price, _)) => match position.side {
+                    PositionSide::Long => cc.low() <= *trail_price,
+                    PositionSide::Short => cc.high() >= *trail_price,
+                },
+                _ => {
+                    return Err(Error::Msg(
+                        "Allow only TakeProfitAndStopLoss or TrailingStop".into(),
+                    ));
+                }
+            };
+
+            if should_close {
+                let exit_price = match position.exit_rule() {
                     Some(OrderType::TakeProfitAndStopLoss(take_profit, stop_loss)) => {
                         match position.side {
                             PositionSide::Long => {
-                                (take_profit > &0.0 && take_profit <= &cc.high())
-                                    || (stop_loss > &0.0 && stop_loss >= &cc.low())
+                                if take_profit > &0.0 && take_profit <= &cc.high() {
+                                    *take_profit
+                                } else {
+                                    *stop_loss
+                                }
                             }
                             PositionSide::Short => {
-                                (take_profit > &0.0 && take_profit >= &cc.low())
-                                    || (stop_loss > &0.0 && stop_loss <= &cc.high())
+                                if take_profit > &0.0 && take_profit >= &cc.low() {
+                                    *take_profit
+                                } else {
+                                    *stop_loss
+                                }
                             }
                         }
                     }
-                    Some(OrderType::TrailingStop(trail_price, trail_percent)) => {
-                        match position.side {
-                            PositionSide::Long => {
-                                let new_trailing_stop = cc.high().subpercent(*trail_percent);
-                                let mut pos = self.positions[i].clone();
-                                pos.set_trailingstop(new_trailing_stop);
-                                self.positions[i] = pos;
-
-                                cc.low() <= *trail_price
-                            }
-                            PositionSide::Short => {
-                                let new_trailing_stop = cc.low().addpercent(*trail_percent);
-                                let mut pos = self.positions[i].clone();
-                                pos.set_trailingstop(new_trailing_stop);
-                                self.positions[i] = pos;
-
-                                cc.high() >= *trail_price
-                            }
-                        }
-                    }
-                    _ => {
-                        return Err(Error::Unreachable(
-                            "Allow only TakeProfitAndStopLoss or TrailingStop".into(),
-                        ));
-                    }
+                    Some(OrderType::TrailingStop(price, percent)) => match position.side {
+                        //todo update trailing stop
+                        PositionSide::Long => price.subpercent(*percent),
+                        PositionSide::Short => price.addpercent(*percent),
+                    },
+                    _ => unreachable!(),
                 };
-
-                if should_close {
-                    let exit_price = match position.exit_rule() {
-                        Some(OrderType::TakeProfitAndStopLoss(take_profit, stop_loss)) => {
-                            match position.side {
-                                PositionSide::Long => {
-                                    if take_profit > &0.0 && take_profit <= &cc.high() {
-                                        *take_profit
-                                    } else {
-                                        *stop_loss
-                                    }
-                                }
-                                PositionSide::Short => {
-                                    if take_profit > &0.0 && take_profit >= &cc.low() {
-                                        *take_profit
-                                    } else {
-                                        *stop_loss
-                                    }
-                                }
-                            }
-                        }
-                        Some(OrderType::TrailingStop(price, percent)) => match position.side {
-                            //todo update trailing stop
-                            PositionSide::Long => price.subpercent(*percent),
-                            PositionSide::Short => price.addpercent(*percent),
-                        },
-                        _ => unreachable!(),
-                    };
-                    self.close_position(&position, exit_price)?;
-                } else {
-                    i += 1;
-                }
+                self.close_position(&position, exit_price)?;
+            } else {
+                positions.push_back(position);
             }
         }
+        self.positions.append(&mut positions);
         Ok(())
     }
 
@@ -239,7 +235,8 @@ impl Backtest {
     pub fn reset(&mut self) {
         self.index = 0;
         self.wallet.reset();
-        self.orders = Vec::new();
-        self.positions = Vec::new();
+        self.events = Vec::new();
+        self.orders = VecDeque::new();
+        self.positions = VecDeque::new();
     }
 }

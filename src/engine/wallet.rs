@@ -35,7 +35,7 @@ impl Wallet {
     pub fn free_balance(&self) -> Result<f64> {
         let free_balance = self.balance - self.locked;
         if free_balance < 0.0 {
-            return Err(Error::Unreachable(format!(
+            return Err(Error::Msg(format!(
                 "Negative free balance: balance={}, locked={}",
                 self.balance, self.locked
             )));
@@ -76,7 +76,7 @@ impl Wallet {
             return Err(Error::NegZeroBalance(amount));
         }
         if self.locked - amount < 0.0 {
-            return Err(Error::Unreachable(format!(
+            return Err(Error::Msg(format!(
                 "Locked funds {} are insufficient for amount {}",
                 self.locked, amount
             )));
@@ -116,7 +116,7 @@ fn new_wallet_invalid_balance() {
 fn unlock_funds_invalid() {
     let mut wallet = Wallet::new(100.0).unwrap();
     let result = wallet.unlock(20.0);
-    assert!(matches!(result, Err(Error::Unreachable(_))));
+    assert!(matches!(result, Err(Error::Msg(_))));
 }
 
 #[cfg(test)]

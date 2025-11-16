@@ -23,9 +23,9 @@ pub enum Error {
     #[error("Position not found")]
     PositionNotFound,
 
-    /// An unreachable context was encountered. This is likely a bug.
-    #[error("Unreachable context (internal error): {0}")]
-    Unreachable(String),
+    /// An error context was encountered.
+    #[error("{0}")]
+    Msg(String),
 
     /// I/O error occurred.
     // utils.rs
