@@ -107,29 +107,30 @@ impl Backtest {
     }
 
     /// Closes an existing position.
-    pub fn close_position(&mut self, position: &Position, exit_price: f64) -> Result<f64> {
+    pub fn close_position(&mut self, position: &Position, exit_price: f64, force_remove: bool) -> Result<f64> {
         if exit_price <= 0.0 || !exit_price.is_finite() {
             return Err(Error::Msg("Invalid exit price".into()));
         }
-        let pos_idx = self
-            .positions
-            .iter()
-            .position(|p| p == position)
-            .ok_or(Error::PositionNotFound)?;
+        if force_remove {
+            let pos_idx = self
+                .positions
+                .iter()
+                .position(|p| p == position)
+                .ok_or(Error::PositionNotFound)?;
+            self.positions
+                .remove(pos_idx)
+                .ok_or(Error::Msg("Failed to remove position".into()))?;
+        }
         // Calculate profit/loss and update wallet
         let profit = position.estimate_profit(exit_price);
         self.wallet.add(profit + position.cost())?;
-        let position = self
-            .positions
-            .remove(pos_idx)
-            .ok_or(Error::Msg("Failed to remove position".into()))?;
-        self.events.push(Event::DelPosition(position));
+        self.events.push(Event::DelPosition(position.clone()));
         Ok(profit)
     }
 
     pub fn close_all_positions(&mut self, exit_price: f64) -> Result<()> {
         while let Some(position) = self.positions.pop_front() {
-            self.close_position(&position, exit_price)?;
+            self.close_position(&position, exit_price, false)?;
         }
         Ok(())
     }
@@ -151,7 +152,6 @@ impl Backtest {
 
     /// Executes position management (take-profit, stop-loss, trailing stop).
     fn execute_positions(&mut self, candle: &Candle) -> Result<()> {
-        // current candle
         let mut positions = VecDeque::with_capacity(self.positions.len());
         while let Some(mut position) = self.positions.pop_front() {
             let should_close = match position.exit_rule() {
@@ -219,7 +219,7 @@ impl Backtest {
 
             match should_close {
                 Some(exit_price) => {
-                    self.close_position(&position, exit_price)?;
+                    self.close_position(&position, exit_price, false)?;
                 }
                 None => positions.push_back(position),
             }
