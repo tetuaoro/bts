@@ -2,6 +2,7 @@
 
 ## ✅ Done
 - [x] Implement `PlaceOrder` to add orders and check position opening
+- [x] Add market fees
 
 ## 📌 In Progress
 - [ ] Add `Candle` builder for validation

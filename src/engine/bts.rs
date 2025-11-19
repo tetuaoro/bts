@@ -21,10 +21,134 @@ fn get_short_data() -> Vec<Candle> {
 }
 
 #[test]
+fn scenario_place_and_delete_order_with_market_fees() {
+    let data = get_data();
+    let balance = 1000.0;
+    let market_fee = 0.1; // 0.1%
+    let mut bt = Backtest::new(data, balance, Some(market_fee)).unwrap();
+    let candle = bt.next().unwrap();
+    let price = candle.close(); // 110
+
+    let expected_fee = price * 1.0 * market_fee; // 110 * 1.0 * 0.001 = 0.11
+    let _expected_total_cost = price + expected_fee; // 110 + 0.11 = 110.11
+
+    let order = Order::from((OrderType::Market(price), 1.0, OrderSide::Buy));
+    bt.place_order(order.clone()).unwrap();
+
+    assert!(!bt.orders.is_empty());
+    assert_eq!(bt.balance(), 1000.0);
+    assert_eq!(bt.total_balance(), 1000.0);
+    assert_eq!(bt.free_balance().unwrap(), 890.0); // 890 with fees \ 900 without fees
+
+    bt.delete_order(&order, true).unwrap();
+
+    assert!(bt.orders.is_empty());
+    assert_eq!(bt.balance(), 1000.0);
+    assert_eq!(bt.total_balance(), 1000.0);
+    assert_eq!(bt.free_balance().unwrap(), 1000.0);
+
+    // Open long, take-profit
+    {
+        let data = get_long_data();
+        let balance = 1000.0;
+        let market_fee = 0.1; // 0.1%
+        let mut bt = Backtest::new(data, balance, Some(market_fee)).unwrap();
+
+        let candle = bt.next().unwrap();
+        let price = candle.close(); // 100
+        let take_profit = OrderType::TakeProfitAndStopLoss(price.addpercent(20.0), 0.0);
+        let order = Order::from((OrderType::Market(price), take_profit, 1.0, OrderSide::Buy));
+
+        let open_fee = price * 1.0 * market_fee;
+        let expected_total_cost = price + open_fee; // 100 + 0.10% = 110.0
+
+        bt.place_order(order).unwrap();
+        bt.execute_orders(&candle).unwrap();
+
+        assert!(!bt.positions.is_empty());
+        assert_eq!(bt.balance(), 890.0);
+        assert_eq!(bt.total_balance(), 890.0);
+        assert_eq!(bt.free_balance().unwrap(), 1000.0 - expected_total_cost);
+
+        let candle = bt.next().unwrap();
+        bt.execute_positions(&candle).unwrap(); // close = 110, p&l brut = +10
+        assert!(!bt.positions.is_empty());
+
+        let candle = bt.next().unwrap();
+        bt.execute_positions(&candle).unwrap(); // close = 120, take profit
+
+        assert!(bt.positions.is_empty());
+        assert_eq!(bt.balance(), 1010.0); // balance = 1020 - 10 (fees)
+        assert_eq!(bt.total_balance(), 1010.0);
+        assert_eq!(bt.free_balance().unwrap(), 1010.0);
+    }
+}
+
+#[test]
+fn scenario_open_position_with_market_fees() {
+    let data = get_long_data();
+    let balance = 1000.0;
+    let market_fee = 0.1; // 0.1%
+    let mut bt = Backtest::new(data, balance, Some(market_fee)).unwrap();
+
+    let candle = bt.next().unwrap();
+    let price = candle.close(); // 100
+    let take_profit = OrderType::TakeProfitAndStopLoss(price.addpercent(20.0), 0.0);
+    let order = Order::from((OrderType::Market(price), take_profit, 1.0, OrderSide::Buy));
+
+    let open_fee = price * 1.0 * market_fee;
+    let expected_total_cost = price + open_fee; // 100 + 0.10% = 110.0
+
+    bt.place_order(order).unwrap();
+    bt.execute_orders(&candle).unwrap();
+
+    assert!(!bt.positions.is_empty());
+    assert_eq!(bt.balance(), 890.0);
+    assert_eq!(bt.total_balance(), 890.0);
+    assert_eq!(bt.free_balance().unwrap(), 1000.0 - expected_total_cost);
+
+    let candle = bt.next().unwrap();
+    bt.execute_positions(&candle).unwrap(); // close = 110, p&l brut = +10
+    assert!(!bt.positions.is_empty());
+
+    let candle = bt.next().unwrap();
+    bt.execute_positions(&candle).unwrap(); // close = 120, take profit
+
+    assert!(bt.positions.is_empty());
+    assert_eq!(bt.balance(), 1010.0); // balance = 1020 - 10 (fees)
+    assert_eq!(bt.total_balance(), 1010.0);
+    assert_eq!(bt.free_balance().unwrap(), 1010.0);
+}
+
+#[test]
+fn scenario_place_and_delete_auto_a_market_order() {
+    let data = get_data();
+    let balance = 1000.0;
+    let mut bt = Backtest::new(data, balance, None).unwrap();
+
+    let candle = bt.next().unwrap();
+    let price = candle.close(); // 110
+
+    let order = Order::from((OrderType::Market(price * 3.0), 1.0, OrderSide::Buy));
+    bt.place_order(order).unwrap(); // lock amount 110
+
+    assert_eq!(bt.balance(), 1000.0);
+    assert_eq!(bt.total_balance(), 1000.0);
+    assert_eq!(bt.free_balance().unwrap(), 670.0);
+
+    bt.execute_orders(&candle).unwrap();
+
+    assert!(bt.orders.is_empty());
+    assert_eq!(bt.balance(), 1000.0);
+    assert_eq!(bt.total_balance(), 1000.0);
+    assert_eq!(bt.free_balance().unwrap(), 1000.0);
+}
+
+#[test]
 fn scenario_place_and_delete_order() {
     let data = get_data();
     let balance = 1000.0;
-    let mut bt = Backtest::new(data, balance).unwrap();
+    let mut bt = Backtest::new(data, balance, None).unwrap();
 
     let candle = bt.next().unwrap();
     let price = candle.close(); // 110
@@ -37,7 +161,7 @@ fn scenario_place_and_delete_order() {
     assert_eq!(bt.total_balance(), 1000.0);
     assert_eq!(bt.free_balance().unwrap(), 890.0);
 
-    bt.delete_order(&order).unwrap(); // unlock amount 110
+    bt.delete_order(&order, true).unwrap(); // unlock amount 110
 
     assert!(bt.orders.is_empty());
     assert_eq!(bt.balance(), 1000.0);
@@ -49,7 +173,7 @@ fn scenario_place_and_delete_order() {
 fn scenario_open_long_position_and_take_profit() {
     let data = get_long_data();
     let balance = 1000.0;
-    let mut bt = Backtest::new(data, balance).unwrap();
+    let mut bt = Backtest::new(data, balance, None).unwrap();
 
     let candle = bt.next().unwrap();
     let price = candle.close();
@@ -98,7 +222,7 @@ fn scenario_open_long_position_and_take_profit() {
 fn scenario_open_long_position_and_stop_loss() {
     let data = get_short_data();
     let balance = 1000.0;
-    let mut bt = Backtest::new(data, balance).unwrap();
+    let mut bt = Backtest::new(data, balance, None).unwrap();
 
     let candle = bt.next().unwrap();
     let price = candle.close();
@@ -147,7 +271,7 @@ fn scenario_open_long_position_and_stop_loss() {
 fn scenario_open_short_position_and_take_profit() {
     let data = get_short_data();
     let balance = 1000.0;
-    let mut bt = Backtest::new(data, balance).unwrap();
+    let mut bt = Backtest::new(data, balance, None).unwrap();
 
     let candle = bt.next().unwrap();
     let price = candle.close();
@@ -196,7 +320,7 @@ fn scenario_open_short_position_and_take_profit() {
 fn scenario_open_short_position_and_stop_loss() {
     let data = get_long_data();
     let balance = 1000.0;
-    let mut bt = Backtest::new(data, balance).unwrap();
+    let mut bt = Backtest::new(data, balance, None).unwrap();
 
     let candle = bt.next().unwrap();
     let price = candle.close();
@@ -254,7 +378,7 @@ fn scenario_open_long_position_with_trailing_stop_profit() {
     ];
 
     let balance = 1000.0;
-    let mut bt = Backtest::new(data, balance).unwrap();
+    let mut bt = Backtest::new(data, balance, None).unwrap();
 
     let candle = bt.next().unwrap();
     let price = candle.close();
@@ -309,7 +433,7 @@ fn scenario_open_long_position_with_trailing_stop_loss() {
     ];
 
     let balance = 1000.0;
-    let mut bt = Backtest::new(data, balance).unwrap();
+    let mut bt = Backtest::new(data, balance, None).unwrap();
 
     let candle = bt.next().unwrap();
     let price = candle.close();

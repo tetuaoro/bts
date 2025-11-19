@@ -62,6 +62,12 @@ impl Wallet {
         self.free_balance()
     }
 
+    /// Subtracts the market fees from the balance (after a position is executed).
+    pub(crate) fn sub_fees(&mut self, amount: f64) -> Result<f64> {
+        self.balance -= amount;
+        self.free_balance()
+    }
+
     /// Locks additional funds for a position.
     pub(crate) fn lock(&mut self, amount: f64) -> Result<()> {
         if amount <= 0.0 {

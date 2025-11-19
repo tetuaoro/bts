@@ -3,9 +3,6 @@ mod order;
 mod position;
 mod wallet;
 
-#[cfg(test)]
-mod bts;
-
 use std::collections::{VecDeque, vec_deque::Iter};
 
 use crate::{
@@ -17,6 +14,20 @@ pub use candle::*;
 pub use order::*;
 pub use position::*;
 use wallet::*;
+
+#[cfg(test)]
+mod bts;
+
+#[cfg(test)]
+impl Iterator for Backtest {
+    type Item = Candle;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let candle = self.data.get(self.index).cloned();
+        self.index += 1;
+        candle
+    }
+}
 
 #[derive(Debug, PartialEq)]
 pub enum Event {
@@ -34,6 +45,7 @@ pub struct Backtest {
     data: Vec<Candle>,
     events: Vec<Event>,
     orders: VecDeque<Order>,
+    market_fees: Option<f64>,
     positions: VecDeque<Position>,
 }
 
@@ -45,26 +57,25 @@ impl std::ops::Deref for Backtest {
     }
 }
 
-impl Iterator for Backtest {
-    type Item = Candle;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        let candle = self.data.get(self.index).cloned();
-        self.index += 1;
-        candle
-    }
-}
-
 impl Backtest {
     /// Creates a new backtest instance.
     ///
     /// ### Arguments
     /// * `data` - Vector of candle data.
     /// * `initial_balance` - Initial wallet balance.
+    /// * `market_fee` - Market fee percentage (e.g., 0.1 for 0.1%).
+    ///   Fees are **only applied when positions are opened**, not when orders are placed.
+    ///
+    /// ### Market Fees Behavior
+    /// - **Order Placement**: No fees are charged when placing an order.
+    ///   Fees are only deducted when the order is executed and a position is opened.
+    /// - **Position Opening**: Fees are calculated as `price × quantity × market_fee`
+    ///   and deducted from the wallet when the position is opened.
+    /// - **Order Cancellation**: No fees are charged if an order is cancelled before execution.
     ///
     /// ### Returns
     /// The new backtest instance or an error.
-    pub fn new(data: Vec<Candle>, initial_balance: f64) -> Result<Self> {
+    pub fn new(data: Vec<Candle>, initial_balance: f64, market_fees: Option<f64>) -> Result<Self> {
         if data.is_empty() {
             return Err(Error::CandleDataEmpty);
         }
@@ -76,6 +87,7 @@ impl Backtest {
             orders: VecDeque::new(),
             positions: VecDeque::new(),
             wallet: Wallet::new(initial_balance)?,
+            market_fees,
         })
     }
 
@@ -115,21 +127,26 @@ impl Backtest {
     ///
     /// ### Returns
     /// Ok if successful, or an error.
-    pub fn delete_order(&mut self, order: &Order) -> Result<()> {
-        let order_idx = self
-            .orders
-            .iter()
-            .position(|o| o == order)
-            .ok_or(Error::OrderNotFound)?;
-        let order = self.orders.remove(order_idx).ok_or(Error::RemoveOrder)?;
+    pub fn delete_order(&mut self, order: &Order, force_remove: bool) -> Result<()> {
+        if force_remove {
+            let order_idx = self
+                .orders
+                .iter()
+                .position(|o| o == order)
+                .ok_or(Error::OrderNotFound)?;
+            self.orders.remove(order_idx).ok_or(Error::RemoveOrder)?;
+        }
         self.wallet.unlock(order.cost()?)?;
-        self.events.push(Event::DelOrder(order));
+        self.events.push(Event::DelOrder(order.clone()));
         Ok(())
     }
 
     /// Opens a new position.
     fn open_position(&mut self, position: Position) -> Result<()> {
         self.wallet.sub(position.cost()?)?;
+        if let Some(fee) = self.market_fees {
+            self.wallet.sub_fees(position.cost()? * fee)?;
+        }
         self.positions.push_back(position.clone());
         self.events.push(Event::AddPosition(position));
         Ok(())
@@ -188,7 +205,9 @@ impl Backtest {
                 self.open_position(Position::from(order))?;
             } else {
                 //? if order is market type and does not between `high` and `low`, delete
-                if !order.is_market_type() {
+                if order.is_market_type() {
+                    self.delete_order(&order, false)?;
+                } else {
                     orders.push_back(order);
                 }
             }

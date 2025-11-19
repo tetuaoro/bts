@@ -44,7 +44,7 @@ fn main() -> anyhow::Result<()> {
         .collect::<Vec<_>>();
 
     let initial_balance = 1_000.0;
-    let mut bt = Backtest::new(candles.clone(), initial_balance)?;
+    let mut bt = Backtest::new(candles.clone(), initial_balance, None)?;
     let mut ema = ExponentialMovingAverage::new(100)?;
     let mut macd = MovingAverageConvergenceDivergence::default();
 
