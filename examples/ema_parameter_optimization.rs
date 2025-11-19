@@ -1,0 +1,91 @@
+//! # EMA Parameter Optimization
+//!
+//! This module implements a **brute-force optimization** to find the optimal EMA (Exponential Moving Average)
+//! period for a trading strategy. It tests a range of EMA periods (from 3 to 200) and evaluates which
+//! period yields the highest final balance when used in a trend-following strategy.
+//!
+//! ## Strategy Logic
+//! - Uses a **trend-following approach**: Buy when price closes above the EMA
+//! - Implements **risk management**: Maximum 2% of capital per trade, minimum trade size of 21 units
+//! - Uses **stop loss**: 2% to protect profits and limit losses
+//! - Only trades when account balance is above 50% of initial capital (risk control)
+//!
+//! ## Optimization Process
+//! 1. Iterates through EMA periods from 3 to 200
+//! 2. For each period:
+//!    - Resets the backtest to initial state
+//!    - Runs the strategy with the current EMA period
+//!    - Records the final balance
+//! 3. Sorts results by final balance (descending order)
+//! 4. Outputs:
+//!    - Top performing periods (successful backtests)
+//!    - Error cases (failed backtests)
+
+use std::cmp::Ordering;
+
+use bts::prelude::*;
+
+use ta::{indicators::ExponentialMovingAverage, *};
+
+fn main() -> anyhow::Result<()> {
+    let items = get_data_from_file("data/btc.json".into())?;
+    let candles = items
+        .iter()
+        .map(|d| Candle::from((d.open(), d.high(), d.low(), d.close(), d.volume(), d.bid())))
+        .collect::<Vec<_>>();
+
+    let initial_balance = 1_000.0;
+    let mut bt = Backtest::new(candles.clone(), initial_balance, None)?;
+
+    let mut total_balances = vec![];
+    let mut errors = vec![];
+
+    for period in 3..200 {
+        let mut ema = ExponentialMovingAverage::new(period)?;
+        let result = bt.run(|bt, candle| {
+            let close = candle.close();
+            let output = ema.next(close);
+
+            let balance = bt.balance();
+            let amount = balance.how_many(2.0).max(21.0);
+
+            // 21: minimum to trade
+            if balance > (initial_balance / 2.0) && close > output {
+                let quantity = amount / close;
+                let order = (
+                    OrderType::Market(close),
+                    OrderType::TakeProfitAndStopLoss(close * 2.0, close.subpercent(2.0)),
+                    quantity,
+                    OrderSide::Buy,
+                );
+                bt.place_order(order.into())?;
+            }
+
+            Ok(())
+        });
+
+        match result {
+            Ok(_) => total_balances.push((period, bt.total_balance())),
+            Err(_) => errors.push((period, bt.total_balance())),
+        }
+
+        bt.reset();
+    }
+
+    total_balances.sort_by(|(_, a), (_, b)| if a < b { Ordering::Greater } else { Ordering::Less });
+    errors.sort_by(|(_, a), (_, b)| if a < b { Ordering::Greater } else { Ordering::Less });
+
+    println!("=== TOP 5 EMA PERIODS ===");
+    for (p, b) in total_balances.iter().take(5) {
+        let opt = initial_balance.change(*b);
+        println!("period: {p} balance: {b:.2} ({opt:.2}%)");
+    }
+
+    println!("\n=== ERROR CASES (TOP 5) ===");
+    for (p, b) in errors.iter().take(5) {
+        let opt = initial_balance.change(*b);
+        println!("period: {p} balance: {b:.2} ({opt:.2}%)");
+    }
+
+    Ok(())
+}

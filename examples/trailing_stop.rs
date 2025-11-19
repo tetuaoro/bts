@@ -54,11 +54,10 @@ fn main() -> anyhow::Result<()> {
         let MovingAverageConvergenceDivergenceOutput { histogram, .. } = macd.next(close);
 
         let balance = bt.balance();
-        let amount = balance.how_many(2.0);
-        let amount = if amount >= 21.0 { amount } else { 21.0 };
+        let amount = balance.how_many(2.0).max(21.0);
 
         // 21: minimum to trade
-        if balance > (initial_balance / 2.0) && amount >= 21.0 && close > output && histogram > 0.0 {
+        if balance > (initial_balance / 2.0) && close > output && histogram > 0.0 {
             let quantity = amount / close;
             let order = (
                 OrderType::Market(close),

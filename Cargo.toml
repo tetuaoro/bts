@@ -36,3 +36,8 @@ required-features = ["serde"]
 name = "tpsl"
 path = "examples/take_profit_and_stop_loss.rs"
 required-features = ["serde"]
+
+[[example]]
+name = "emaparamopt"
+path = "examples/ema_parameter_optimization.rs"
+required-features = ["serde"]
