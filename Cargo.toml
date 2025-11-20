@@ -27,6 +27,7 @@ serde = [
 [dev-dependencies]
 ta = "0.5.0"
 anyhow = "1.0.100"
+rayon = "1.11.0"
 
 [[example]]
 name = "ts"
@@ -39,3 +40,7 @@ path = "examples/take_profit_and_stop_loss.rs"
 [[example]]
 name = "emaopt"
 path = "examples/ema_parameter_optimization.rs"
+
+[[example]]
+name = "emacdopt"
+path = "examples/ema_macd_parameter_optimization_par.rs"
