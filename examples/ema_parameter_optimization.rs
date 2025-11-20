@@ -31,7 +31,17 @@ fn main() -> anyhow::Result<()> {
     let items = get_data_from_file("data/btc.json".into())?;
     let candles = items
         .iter()
-        .map(|d| Candle::from((d.open(), d.high(), d.low(), d.close(), d.volume(), d.bid())))
+        .map(|d| {
+            CandleBuilder::builder()
+                .open(d.open())
+                .high(d.high())
+                .low(d.low())
+                .close(d.close())
+                .volume(d.volume())
+                .bid(d.bid())
+                .build()
+                .unwrap()
+        })
         .collect::<Vec<_>>();
 
     let initial_balance = 1_000.0;
@@ -46,7 +56,7 @@ fn main() -> anyhow::Result<()> {
             let close = candle.close();
             let output = ema.next(close);
 
-            let balance = bt.balance();
+            let balance = bt.free_balance()?;
             let amount = balance.how_many(2.0).max(21.0);
 
             // 21: minimum to trade

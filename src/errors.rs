@@ -13,6 +13,18 @@ pub enum Error {
     #[error("Candle not found")]
     CandleNotFound,
 
+    /// A required field is missing.
+    #[error("Missing required field: {0}")]
+    MissingField(&'static str),
+
+    /// Prices are not in valid order (open ≤ low ≤ high ≤ close).
+    #[error("Invalid price order: open={open}, low={low}, high={high}, close={close}")]
+    InvalidPriceOrder { open: f64, low: f64, high: f64, close: f64 },
+
+    /// Volume cannot be negative.
+    #[error("Volume cannot be negative (got: {0})")]
+    NegativeVolume(f64),
+
     /// The initial or current balance is not positive.
     ///
     /// ### Arguments

@@ -1,6 +1,8 @@
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
+use crate::errors::{Error, Result};
+
 /// Represents a financial candle (or candlestick) with open, high, low, close, volume, and bid/ask data.
 ///
 /// A candle is a fundamental data structure in financial markets, representing price movements
@@ -15,32 +17,6 @@ pub struct Candle {
     close: f64,
     volume: f64,
     bid: f64,
-}
-
-impl From<(f64, f64, f64, f64, f64)> for Candle {
-    fn from((open, high, low, close, volume): (f64, f64, f64, f64, f64)) -> Self {
-        Self {
-            open,
-            high,
-            low,
-            close,
-            volume,
-            bid: 0.0,
-        }
-    }
-}
-
-impl From<(f64, f64, f64, f64, f64, f64)> for Candle {
-    fn from((open, high, low, close, volume, bid): (f64, f64, f64, f64, f64, f64)) -> Self {
-        Self {
-            open,
-            high,
-            low,
-            close,
-            volume,
-            bid,
-        }
-    }
 }
 
 impl Candle {
@@ -80,4 +56,364 @@ impl Candle {
     pub fn ask(&self) -> f64 {
         self.volume - self.bid
     }
+
+    /// Checks if the candle is bullish (close > open).
+    pub fn is_bullish(&self) -> bool {
+        self.close > self.open
+    }
+
+    /// Checks if the candle is bearish (close < open).
+    pub fn is_bearish(&self) -> bool {
+        self.close < self.open
+    }
+}
+
+/// Builder for creating validated `Candle` instances.
+#[derive(Debug)]
+pub struct CandleBuilder {
+    open: Option<f64>,
+    high: Option<f64>,
+    low: Option<f64>,
+    close: Option<f64>,
+    volume: Option<f64>,
+    bid: Option<f64>,
+}
+
+impl CandleBuilder {
+    /// Creates a new `CandleBuilder`.
+    pub fn builder() -> Self {
+        Self {
+            open: None,
+            high: None,
+            low: None,
+            close: None,
+            volume: None,
+            bid: None,
+        }
+    }
+
+    /// Sets the open price.
+    pub fn open(mut self, open: f64) -> Self {
+        self.open = Some(open);
+        self
+    }
+
+    /// Sets the high price.
+    pub fn high(mut self, high: f64) -> Self {
+        self.high = Some(high);
+        self
+    }
+
+    /// Sets the low price.
+    pub fn low(mut self, low: f64) -> Self {
+        self.low = Some(low);
+        self
+    }
+
+    /// Sets the close price.
+    pub fn close(mut self, close: f64) -> Self {
+        self.close = Some(close);
+        self
+    }
+
+    /// Sets the volume.
+    pub fn volume(mut self, volume: f64) -> Self {
+        self.volume = Some(volume);
+        self
+    }
+
+    /// Sets the bid price.
+    pub fn bid(mut self, bid: f64) -> Self {
+        self.bid = Some(bid);
+        self
+    }
+
+    /// Builds a `Candle` after validating the data.
+    ///
+    /// # Errors
+    /// Returns an error if:
+    /// - Any required field is missing (open, high, low, close, volume)
+    /// - Prices are not valid (open ≤ low ≤ high ≤ close)
+    /// - Volume is negative
+    pub fn build(self) -> Result<Candle> {
+        // Check required fields
+        let open = self.open.ok_or(Error::MissingField("open"))?;
+        let high = self.high.ok_or(Error::MissingField("high"))?;
+        let low = self.low.ok_or(Error::MissingField("low"))?;
+        let close = self.close.ok_or(Error::MissingField("close"))?;
+        let volume = self.volume.ok_or(Error::MissingField("volume"))?;
+
+        // Validate prices
+        if !(low <= open && low <= close && low <= high && high >= open && high >= close && low >= 0.0) {
+            return Err(Error::InvalidPriceOrder { open, low, high, close });
+        }
+
+        // Validate volume
+        if volume < 0.0 {
+            return Err(Error::NegativeVolume(volume));
+        }
+
+        Ok(Candle {
+            open,
+            high,
+            low,
+            close,
+            volume,
+            bid: self.bid.unwrap_or(0.0), // 0.0 if not provided
+        })
+    }
+}
+
+#[cfg(test)]
+#[test]
+fn candle_accessors() {
+    let candle = CandleBuilder::builder()
+        .open(100.0)
+        .high(110.0)
+        .low(95.0)
+        .close(105.0)
+        .volume(1000.0)
+        .bid(104.5)
+        .build()
+        .unwrap();
+
+    assert_eq!(candle.open(), 100.0);
+    assert_eq!(candle.high(), 110.0);
+    assert_eq!(candle.low(), 95.0);
+    assert_eq!(candle.close(), 105.0);
+    assert_eq!(candle.volume(), 1000.0);
+    assert_eq!(candle.bid(), 104.5);
+    assert_eq!(candle.ask(), 1000.0 - 104.5); // volume - bid
+}
+
+#[cfg(test)]
+#[test]
+fn candle_type_detection() {
+    let bullish = CandleBuilder::builder()
+        .open(100.0)
+        .high(110.0)
+        .low(95.0)
+        .close(105.0)
+        .volume(1000.0)
+        .build()
+        .unwrap();
+    let bearish = CandleBuilder::builder()
+        .open(105.0)
+        .high(110.0)
+        .low(95.0)
+        .close(100.0)
+        .volume(1000.0)
+        .build()
+        .unwrap();
+    let neutral = CandleBuilder::builder()
+        .open(100.0)
+        .high(100.0)
+        .low(100.0)
+        .close(100.0)
+        .volume(1000.0)
+        .build()
+        .unwrap();
+
+    assert!(bullish.is_bullish());
+    assert!(!bullish.is_bearish());
+
+    assert!(!bearish.is_bullish());
+    assert!(bearish.is_bearish());
+
+    assert!(!neutral.is_bullish());
+    assert!(!neutral.is_bearish());
+}
+
+#[cfg(test)]
+#[test]
+fn candle_builder_valid() {
+    let candle = CandleBuilder::builder()
+        .open(100.0)
+        .high(110.0)
+        .low(95.0)
+        .close(105.0)
+        .volume(1000.0)
+        .bid(104.5)
+        .build()
+        .unwrap();
+
+    assert_eq!(candle.open(), 100.0);
+    assert_eq!(candle.high(), 110.0);
+    assert_eq!(candle.low(), 95.0);
+    assert_eq!(candle.close(), 105.0);
+    assert_eq!(candle.volume(), 1000.0);
+    assert_eq!(candle.bid(), 104.5);
+}
+
+#[cfg(test)]
+#[test]
+fn candle_builder_missing_fields() {
+    // Missing open
+    let result = CandleBuilder::builder()
+        .high(110.0)
+        .low(95.0)
+        .close(105.0)
+        .volume(1000.0)
+        .build();
+    assert!(matches!(result, Err(Error::MissingField("open"))));
+
+    // Missing high
+    let result = CandleBuilder::builder()
+        .open(100.0)
+        .low(95.0)
+        .close(105.0)
+        .volume(1000.0)
+        .build();
+    assert!(matches!(result, Err(Error::MissingField("high"))));
+
+    // Missing low
+    let result = CandleBuilder::builder()
+        .open(100.0)
+        .high(110.0)
+        .close(105.0)
+        .volume(1000.0)
+        .build();
+    assert!(matches!(result, Err(Error::MissingField("low"))));
+
+    // Missing close
+    let result = CandleBuilder::builder()
+        .open(100.0)
+        .high(110.0)
+        .low(95.0)
+        .volume(1000.0)
+        .build();
+    assert!(matches!(result, Err(Error::MissingField("close"))));
+
+    // Missing volume
+    let result = CandleBuilder::builder()
+        .open(100.0)
+        .high(110.0)
+        .low(95.0)
+        .close(105.0)
+        .build();
+    assert!(matches!(result, Err(Error::MissingField("volume"))));
+}
+
+#[cfg(test)]
+#[test]
+fn candle_builder_invalid_prices() {
+    // open > high
+    let result = CandleBuilder::builder()
+        .open(110.0)
+        .high(100.0)
+        .low(95.0)
+        .close(105.0)
+        .volume(1000.0)
+        .build();
+    assert!(matches!(result, Err(Error::InvalidPriceOrder { .. })));
+
+    // low > high
+    let result = CandleBuilder::builder()
+        .open(100.0)
+        .high(105.0)
+        .low(110.0)
+        .close(105.0)
+        .volume(1000.0)
+        .build();
+    assert!(matches!(result, Err(Error::InvalidPriceOrder { .. })));
+
+    // high < close
+    let result = CandleBuilder::builder()
+        .open(100.0)
+        .high(105.0)
+        .low(95.0)
+        .close(110.0)
+        .volume(1000.0)
+        .build(); // OK: 105 < 110
+    assert!(matches!(result, Err(Error::InvalidPriceOrder { .. })));
+
+    // open < low
+    let result = CandleBuilder::builder()
+        .open(100.0)
+        .high(110.0)
+        .low(105.0)
+        .close(105.0)
+        .volume(1000.0)
+        .build();
+    assert!(matches!(result, Err(Error::InvalidPriceOrder { .. })));
+}
+
+#[cfg(test)]
+#[test]
+fn candle_builder_negative_volume() {
+    let result = CandleBuilder::builder()
+        .open(100.0)
+        .high(110.0)
+        .low(95.0)
+        .close(105.0)
+        .volume(-1000.0)
+        .build();
+    assert!(matches!(result, Err(Error::NegativeVolume(-1000.0))));
+}
+
+#[cfg(test)]
+#[test]
+fn candle_builder_optional_bid() {
+    let candle = CandleBuilder::builder()
+        .open(100.0)
+        .high(110.0)
+        .low(95.0)
+        .close(105.0)
+        .volume(1000.0)
+        .build()
+        .unwrap();
+    assert_eq!(candle.bid(), 0.0);
+
+    let candle = CandleBuilder::builder()
+        .open(100.0)
+        .high(110.0)
+        .low(95.0)
+        .close(105.0)
+        .volume(1000.0)
+        .bid(104.5)
+        .build()
+        .unwrap();
+    assert_eq!(candle.bid(), 104.5);
+}
+
+#[cfg(test)]
+#[test]
+fn candle_builder_chaining() {
+    let candle = CandleBuilder::builder()
+        .open(100.0)
+        .high(110.0)
+        .low(95.0)
+        .close(105.0)
+        .volume(1000.0)
+        .bid(104.5)
+        .build()
+        .unwrap();
+
+    assert_eq!(candle.open(), 100.0);
+    assert_eq!(candle.bid(), 104.5);
+}
+
+#[cfg(test)]
+#[test]
+fn candle_ask_calculation() {
+    let candle = CandleBuilder::builder()
+        .open(100.0)
+        .high(110.0)
+        .low(95.0)
+        .close(105.0)
+        .volume(1000.0)
+        .bid(104.5)
+        .build()
+        .unwrap();
+    assert_eq!(candle.ask(), 1000.0 - 104.5);
+
+    let candle = CandleBuilder::builder()
+        .open(100.0)
+        .high(110.0)
+        .low(95.0)
+        .close(105.0)
+        .volume(1000.0)
+        .build()
+        .unwrap();
+    assert_eq!(candle.ask(), 1000.0 - 0.0);
 }

@@ -1,23 +1,132 @@
 use super::*;
 
 fn get_data() -> Vec<Candle> {
-    vec![Candle::from((0.0, 0.0, 0.0, 110.0, 0.0))]
+    let candle = CandleBuilder::builder()
+        .open(100.0)
+        .high(111.0)
+        .low(99.0)
+        .close(110.0)
+        .volume(1.0)
+        .build()
+        .unwrap();
+
+    vec![candle]
 }
 
 fn get_long_data() -> Vec<Candle> {
-    vec![
-        Candle::from((90.0, 110.0, 80.0, 100.0, 1.0)),
-        Candle::from((100.0, 119.0, 90.0, 110.0, 1.0)),
-        Candle::from((110.0, 129.0, 100.0, 120.0, 1.0)),
-    ]
+    let candle1 = CandleBuilder::builder()
+        .open(90.0)
+        .high(110.0)
+        .low(80.0)
+        .close(100.0)
+        .volume(1.0)
+        .build()
+        .unwrap();
+    let candle2 = CandleBuilder::builder()
+        .open(100.0)
+        .high(119.0)
+        .low(90.0)
+        .close(110.0)
+        .volume(1.0)
+        .build()
+        .unwrap();
+    let candle3 = CandleBuilder::builder()
+        .open(110.0)
+        .high(129.0)
+        .low(100.0)
+        .close(120.0)
+        .volume(1.0)
+        .build()
+        .unwrap();
+
+    vec![candle1, candle2, candle3]
 }
 
 fn get_short_data() -> Vec<Candle> {
-    vec![
-        Candle::from((150.0, 160.0, 131.0, 140.0, 1.0)),
-        Candle::from((140.0, 150.0, 121.0, 130.0, 1.0)),
-        Candle::from((130.0, 140.0, 111.0, 120.0, 1.0)),
-    ]
+    let candle1 = CandleBuilder::builder()
+        .open(150.0)
+        .high(160.0)
+        .low(131.0)
+        .close(140.0)
+        .volume(1.0)
+        .build()
+        .unwrap();
+    let candle2 = CandleBuilder::builder()
+        .open(140.0)
+        .high(150.0)
+        .low(121.0)
+        .close(130.0)
+        .volume(1.0)
+        .build()
+        .unwrap();
+    let candle3 = CandleBuilder::builder()
+        .open(130.0)
+        .high(140.0)
+        .low(111.0)
+        .close(120.0)
+        .volume(1.0)
+        .build()
+        .unwrap();
+
+    vec![candle1, candle2, candle3]
+}
+
+fn get_long_data_trailing_stop() -> Vec<Candle> {
+    let candle1 = CandleBuilder::builder()
+        .open(99.0)
+        .high(101.0)
+        .low(98.0)
+        .close(100.0)
+        .volume(1.0)
+        .build()
+        .unwrap();
+    let candle2 = CandleBuilder::builder()
+        .open(100.0)
+        .high(110.0)
+        .low(99.0)
+        .close(108.0)
+        .volume(1.0)
+        .build()
+        .unwrap();
+    let candle3 = CandleBuilder::builder()
+        .open(108.0)
+        .high(140.0)
+        .low(108.0)
+        .close(135.0)
+        .volume(1.0)
+        .build()
+        .unwrap();
+    let candle4 = CandleBuilder::builder()
+        .open(135.0)
+        .high(139.9)
+        .low(126.0)
+        .close(130.0)
+        .volume(1.0)
+        .build()
+        .unwrap();
+
+    vec![candle1, candle2, candle3, candle4]
+}
+
+fn get_long_data_trailing_stop_loss() -> Vec<Candle> {
+    let candle1 = CandleBuilder::builder()
+        .open(99.0)
+        .high(100.0)
+        .low(98.0)
+        .close(100.0)
+        .volume(1.0)
+        .build()
+        .unwrap();
+    let candle2 = CandleBuilder::builder()
+        .open(100.0)
+        .high(100.0)
+        .low(90.0)
+        .close(100.0)
+        .volume(1.0)
+        .build()
+        .unwrap();
+
+    vec![candle1, candle2]
 }
 
 #[test]
@@ -206,7 +315,7 @@ fn scenario_open_long_position_and_take_profit() {
     assert!(!bt.positions.is_empty());
     assert_eq!(bt.balance(), 900.0);
     assert_eq!(bt.total_balance(), 910.0); // balance + p&l
-    assert_eq!(bt.free_balance().unwrap(), 910.0);
+    assert_eq!(bt.free_balance().unwrap(), 900.0);
 
     // next tick
     let candle = bt.next().unwrap();
@@ -255,7 +364,7 @@ fn scenario_open_long_position_and_stop_loss() {
     assert!(!bt.positions.is_empty());
     assert_eq!(bt.balance(), 860.0);
     assert_eq!(bt.total_balance(), 850.0); // balance + p&l
-    assert_eq!(bt.free_balance().unwrap(), 850.0);
+    assert_eq!(bt.free_balance().unwrap(), 860.0);
 
     // next tick
     let candle = bt.next().unwrap();
@@ -304,7 +413,7 @@ fn scenario_open_short_position_and_take_profit() {
     assert!(!bt.positions.is_empty());
     assert_eq!(bt.balance(), 860.0);
     assert_eq!(bt.total_balance(), 870.0); // balance + p&l
-    assert_eq!(bt.free_balance().unwrap(), 870.0);
+    assert_eq!(bt.free_balance().unwrap(), 860.0);
 
     // next tick
     let candle = bt.next().unwrap();
@@ -353,7 +462,7 @@ fn scenario_open_short_position_and_stop_loss() {
     assert!(!bt.positions.is_empty());
     assert_eq!(bt.balance(), 900.0);
     assert_eq!(bt.total_balance(), 890.0); // balance + p&l
-    assert_eq!(bt.free_balance().unwrap(), 890.0);
+    assert_eq!(bt.free_balance().unwrap(), 900.0);
 
     // next tick
     let candle = bt.next().unwrap();
@@ -370,13 +479,7 @@ fn scenario_open_long_position_with_trailing_stop_profit() {
     // enter at 100
     // the high is 140 and the trailing stop is set to 10%
     // exit at 126
-    let data = vec![
-        Candle::from((99.0, 101.0, 98.0, 100.0, 1.0)),
-        Candle::from((100.0, 110.0, 99.0, 108.0, 1.0)),
-        Candle::from((108.0, 140.0, 108.0, 135.0, 1.0)),
-        Candle::from((135.0, 139.9, 126.0, 130.0, 1.0)),
-    ];
-
+    let data = get_long_data_trailing_stop();
     let balance = 1000.0;
     let mut bt = Backtest::new(data, balance, None).unwrap();
 
@@ -403,7 +506,7 @@ fn scenario_open_long_position_with_trailing_stop_profit() {
     assert!(!bt.positions.is_empty());
     assert_eq!(bt.balance(), 900.0);
     assert_eq!(bt.total_balance(), 908.0);
-    assert_eq!(bt.free_balance().unwrap(), 908.0);
+    assert_eq!(bt.free_balance().unwrap(), 900.0);
 
     // next tick
     let candle = bt.next().unwrap();
@@ -411,7 +514,7 @@ fn scenario_open_long_position_with_trailing_stop_profit() {
     assert!(!bt.positions.is_empty());
     assert_eq!(bt.balance(), 900.0);
     assert_eq!(bt.total_balance(), 935.0);
-    assert_eq!(bt.free_balance().unwrap(), 935.0);
+    assert_eq!(bt.free_balance().unwrap(), 900.0);
 
     // next tick
     let candle = bt.next().unwrap();
@@ -427,11 +530,7 @@ fn scenario_open_long_position_with_trailing_stop_loss() {
     // enter at 100
     // the high is 100 and the trailing stop is set to 10%
     // exit at 90
-    let data = vec![
-        Candle::from((99.0, 100.0, 98.0, 100.0, 1.0)),
-        Candle::from((100.0, 100.0, 90.0, 100.0, 1.0)),
-    ];
-
+    let data = get_long_data_trailing_stop_loss();
     let balance = 1000.0;
     let mut bt = Backtest::new(data, balance, None).unwrap();
 

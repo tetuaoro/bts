@@ -16,9 +16,9 @@
 - [x] Market fees implementation
   - Volume-based fee calculation
   - Applied on position open
+- [x] Add `Candle` builder for validation
 
 ## 📌 In Progress
-- [ ] Add `Candle` builder for validation
 - [ ] Create `Report` struct to wrap metrics (P&L, drawdown, Sharpe)
 - [ ] Add methods to modify orders/positions (update SL/TP/trailing stop)
 
@@ -26,7 +26,7 @@
 
 ### Core Features
 - [ ] WASM compilation support
-- [ ] Timeframe aggregation (1H → 4H/8H/1D or 1D → 7D/1M)
+- [ ] Timeframe/Volume aggregation (1H → 4H/8H/1D or 1D → 7D/1M)
 - [ ] Multi-strategy parallel execution
 - [ ] Strategy registry (5+ templates)
 - [ ] Genetic parameter optimization

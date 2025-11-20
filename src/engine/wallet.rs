@@ -41,9 +41,9 @@ impl Wallet {
 
     /// Returns the free balance (available for new trades).
     pub fn free_balance(&self) -> Result<f64> {
-        let free_balance = self.total_balance() - self.locked;
+        let free_balance = self.balance - self.locked;
         if free_balance < 0.0 {
-            return Err(Error::NegFreeBalance(self.total_balance(), self.locked));
+            return Err(Error::NegFreeBalance(self.balance, self.locked));
         }
         Ok(free_balance)
     }
@@ -267,10 +267,10 @@ fn unrealized_pnl() {
     wallet.set_unrealized_pnl(10.0); // unrealized gain
     assert_eq!(wallet.unrealized_pnl, 10.0);
     assert_eq!(wallet.total_balance(), 110.0);
-    assert_eq!(wallet.free_balance().unwrap(), 110.0);
+    assert_eq!(wallet.free_balance().unwrap(), 100.0);
 
     wallet.set_unrealized_pnl(-5.0); // unrealized loss
     assert_eq!(wallet.unrealized_pnl, -5.0);
     assert_eq!(wallet.total_balance(), 95.0);
-    assert_eq!(wallet.free_balance().unwrap(), 95.0);
+    assert_eq!(wallet.free_balance().unwrap(), 100.0);
 }
