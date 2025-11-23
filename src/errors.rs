@@ -113,12 +113,4 @@ pub enum Error {
     /// * `0` - The underlying I/O error.
     #[error("I/O error: {0}")]
     IoError(#[from] std::io::Error),
-
-    /// A JSON serialization/deserialization error occurred.
-    ///
-    /// ### Arguments
-    /// * `0` - The underlying JSON error.
-    #[cfg(feature = "serde")]
-    #[error("JSON error: {0}")]
-    JsonError(#[from] serde_json::Error),
 }
