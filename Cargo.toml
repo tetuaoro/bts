@@ -41,5 +41,5 @@ name = "popt"
 path = "examples/parameter_optimization.rs"
 
 [[example]]
-name = "pp"
-path = "examples/parameters_optimization_parallel.rs"
+name = "par_popt"
+path = "examples/par_parameters_optimization.rs"

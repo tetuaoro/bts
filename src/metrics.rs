@@ -59,16 +59,6 @@ pub enum Event {
         /// Total balance (free + locked + unrealized P&L).
         balance: f64,
     },
-
-    /// A fee has been charged for an order.
-    ///
-    /// This event is triggered when a fee is deducted from the wallet.
-    FeeCharged {
-        /// Amount of the fee.
-        fee: f64,
-        /// ID of the order that triggered the fee.
-        order_id: u32,
-    },
 }
 
 /// A collection of trading metrics calculated from a series of events.
@@ -103,13 +93,10 @@ impl Metrics {
     /// Computes the maximum drawdown as a percentage.
     pub fn max_drawdown(&self) -> f64 {
         let mut balance_history = Vec::new();
-        #[allow(unused_assignments)]
-        let mut current_balance = self.initial_balance;
 
         for event in &self.events {
             if let Event::WalletUpdate { balance, .. } = event {
-                current_balance = *balance;
-                balance_history.push(current_balance);
+                balance_history.push(*balance);
             }
         }
 
@@ -136,7 +123,7 @@ impl Metrics {
 
         for event in &self.events {
             if let Event::DelPosition(position) = event {
-                let pnl = position.pnl().unwrap_or(0.0);
+                let pnl = position.pnl().expect("pnl should be set the last exit price");
                 if pnl > 0.0 {
                     total_gains += pnl;
                 } else {
@@ -182,7 +169,7 @@ impl Metrics {
         for event in &self.events {
             if let Event::DelPosition(position) = event {
                 total_trades += 1;
-                if position.pnl().unwrap_or(0.0) > 0.0 {
+                if position.pnl().expect("pnl should be set the last exit price") > 0.0 {
                     winning_trades += 1;
                 }
             }
