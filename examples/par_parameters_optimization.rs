@@ -35,7 +35,7 @@ fn main() -> anyhow::Result<()> {
     let initial_balance = 1_000.0;
     let opt = Optimizer::<Parameters>::new(candles.clone(), initial_balance, None);
 
-    let mut result = opt.with(
+    let result = opt.with(
         |&(ema_period, m1, m2, m3)| {
             let ema = ExponentialMovingAverage::new(ema_period).map_err(|e| Error::Msg(e.to_string()))?;
             let macd = MovingAverageConvergenceDivergence::new(m1, m2, m3).map_err(|e| Error::Msg(e.to_string()))?;
@@ -63,20 +63,32 @@ fn main() -> anyhow::Result<()> {
         },
     )?;
 
-    result.sort_by(|(_, a), (_, b)| a.total_cmp(b));
-    result.reverse();
+    let mut result_with_sum = result
+        .into_iter()
+        .map(|((ema, m1, m2, m3), balance)| {
+            let sum = ema + m1 + m2 + m3;
+            ((ema, m1, m2, m3), balance, sum)
+        })
+        .collect::<Vec<_>>();
 
-    let top = result
-        .iter()
-        .filter(|(_, balance)| *balance > initial_balance)
-        .take(50)
+    result_with_sum.sort_by(|(_, balance1, sum1), (_, balance2, sum2)| {
+        balance2
+            .partial_cmp(balance1)
+            .unwrap_or(std::cmp::Ordering::Equal)
+            .then(sum1.cmp(sum2))
+    });
+
+    let top = result_with_sum
+        .into_iter()
+        .filter(|(_, balance, _)| *balance > initial_balance)
+        .take(5)
         .collect::<Vec<_>>();
 
     println!("\n\nPARAMETERS: MIN {START}, MAX {END}, NB TICKS {}", candles.len());
     println!("\n=== TOP {} EMA/MACD Parameters ===", top.len());
-    for (r, p) in top {
-        let opt = initial_balance.change(*p);
-        println!("{r:?} => {p:.3} ({opt:+.2}%)");
+    for (parameters, balance, sum) in top {
+        let opt = initial_balance.change(balance);
+        println!("{parameters:?} ({sum}) | {balance:.3} ({opt:+.2}%)");
     }
 
     Ok(())

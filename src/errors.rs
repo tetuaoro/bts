@@ -118,6 +118,10 @@ pub enum Error {
     ///
     /// ### Arguments
     /// * `0` - The underlying I/O error.
-    #[error("I/O error: {0}")]
-    IoError(#[from] std::io::Error),
+    #[error("{0}")]
+    Io(#[from] std::io::Error),
+
+    /// A mutex was poisoned.
+    #[error("{0}")]
+    MutexPoisoned(String),
 }
