@@ -46,7 +46,7 @@ pub trait Aggregation {
     fn factors(&self) -> &[usize];
 
     /// Aggregates a set of candles into a single candle.
-    fn aggregate(&self, candles: &[&Candle]) -> Result<Candle> {
+    fn aggregate(&self, candles: &[Candle]) -> Result<Candle> {
         if candles.is_empty() {
             return Err(Error::CandleDataEmpty);
         }
@@ -77,7 +77,7 @@ pub trait Aggregation {
     }
 
     /// Determines if the current set of candles should be aggregated.
-    fn should_aggregate(&self, factor: usize, candles: &[&Candle]) -> bool {
+    fn should_aggregate(&self, factor: usize, candles: &[Candle]) -> bool {
         candles.len() == factor
     }
 }
@@ -396,13 +396,13 @@ impl Backtest {
     ///
     /// ### Returns
     /// Ok if successful, or an error.
-    pub fn run<F>(&mut self, mut func: F) -> Result<()>
+    pub fn run<F>(&mut self, mut strategy: F) -> Result<()>
     where
         F: FnMut(&mut Self, &Candle) -> Result<()>,
     {
         while self.index < self.data.len() {
             let candle = self.data.get(self.index).ok_or(Error::CandleNotFound)?.clone();
-            func(self, &candle)?;
+            strategy(self, &candle)?;
             self.execute_orders(&candle)?;
             self.execute_positions(&candle)?;
             self.index += 1;
@@ -421,35 +421,35 @@ impl Backtest {
     ///
     /// ### Returns
     /// Ok if successful, or an error.
-    pub fn run_with_aggregator<A, F>(&mut self, aggregator: &A, mut func: F) -> Result<()>
+    pub fn run_with_aggregator<A, F>(&mut self, aggregator: &A, mut strategy: F) -> Result<()>
     where
         A: Aggregation,
         F: FnMut(&mut Self, Vec<&Candle>) -> Result<()>,
     {
-        use std::collections::HashMap;
+        use std::collections::BTreeMap;
 
         let factors = aggregator.factors();
         if factors.is_empty() {
             return Err(Error::InvalidFactor);
         }
 
-        let mut current_candles = HashMap::new();
-        let mut aggregated_candles_map = HashMap::new();
+        let mut current_candles = BTreeMap::new();
+        let mut aggregated_candles_map = BTreeMap::new();
 
         // Initialize the map with empty queues for each factor
         for &factor in factors {
             current_candles.insert(factor, VecDeque::with_capacity(factor));
-            aggregated_candles_map.insert(factor, VecDeque::with_capacity(factor));
+            aggregated_candles_map.insert(factor, VecDeque::with_capacity(1));
         }
 
-        let data = self.data.clone(); //todo avoid clone
-        for candle in data.iter() {
+        while self.index < self.data.len() {
+            let candle = self.data.get(self.index).ok_or(Error::CandleNotFound)?.clone();
             for (_, deque) in current_candles.iter_mut() {
-                deque.push_back(candle);
+                deque.push_back(candle.clone());
             }
 
             for (factor, agg) in aggregated_candles_map.iter_mut() {
-                let deque = current_candles.get_mut(factor).expect("should contains candles");
+                let deque = current_candles.get_mut(factor).ok_or(Error::CandleDataEmpty)?;
                 let zero = deque.make_contiguous();
                 if aggregator.should_aggregate(*factor, zero) {
                     let candle = aggregator.aggregate(zero)?;
@@ -459,11 +459,11 @@ impl Backtest {
                 }
             }
 
-            let agg_candles = aggregated_candles_map.values().flatten().collect::<Vec<_>>();
-            func(self, agg_candles)?;
+            let agg_candles = aggregated_candles_map.values().flatten().collect();
+            strategy(self, agg_candles)?;
             self.execute_orders(&candle)?;
             self.execute_positions(&candle)?;
-            // self.index += 1; // unnecessary inc
+            self.index += 1;
         }
 
         Ok(())
