@@ -44,7 +44,7 @@ ta = "0.5.0"
 anyhow = "1.0.100"
 
 [package.metadata.docs.rs]
-features = ["serde", "metrics", "optimizer"]
+all-features = true
 
 [[example]]
 name = "ts"
