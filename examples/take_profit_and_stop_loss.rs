@@ -71,5 +71,12 @@ fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
         println!("buy and hold {buy_and_hold:.2} ({buy_and_hold_perf:.2}%)");
     }
 
+    #[cfg(feature = "draws")]
+    {
+        let options = DrawOptions::default();
+        let draw = Draw::with_backtest(&bts).with_options(options);
+        draw.plot()?;
+    }
+
     Ok(())
 }

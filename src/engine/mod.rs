@@ -127,10 +127,10 @@ impl Backtest {
             return Err(Error::CandleDataEmpty);
         }
 
-        if let Some((market_fee, limit_fee)) = market_fees {
-            if market_fee <= 0.0 || limit_fee <= 0.0 {
-                return Err(Error::NegZeroFees);
-            }
+        if let Some((market_fee, limit_fee)) = market_fees
+            && (market_fee <= 0.0 || limit_fee <= 0.0)
+        {
+            return Err(Error::NegZeroFees);
         }
 
         Ok(Self {
@@ -423,7 +423,8 @@ impl Backtest {
     /// ### Arguments
     /// * `aggregator` - An aggregator that defines how to group candles (e.g., by timeframe).
     /// * `strategy` - A closure that takes the backtest and a vector of candle references.
-    ///            The vector contains the current candle followed by any aggregated candles.
+    /// 
+    /// The vector contains the current candle followed by any aggregated candles.
     ///
     /// ### Returns
     /// Ok if successful, or an error.

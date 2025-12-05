@@ -77,18 +77,18 @@ impl<PS: ParameterCombination> Optimizer<PS> {
         S: FnMut(&mut Backtest, &mut T, &Candle) -> Result<()> + Send,
     {
         let num_cpus = num_cpus::get();
-        let strategy = Arc::new(Mutex::new(strategy));
         let combinations = PS::generate();
-        let chunk_size = ((combinations.len() + num_cpus - 1) / num_cpus).max(1);
+        let strategy = Arc::new(Mutex::new(strategy));
+        let chunk_size = combinations.len().div_ceil(num_cpus).max(1);
 
-        let chunk_results = combinations
+        combinations
             .par_chunks(chunk_size)
             .map::<_, Result<_>>(|par_combinations| {
                 let mut backtest = Backtest::new(self.data.clone(), self.initial_balance, self.market_fees)?;
                 let mut local_results = Vec::with_capacity(par_combinations.len());
 
                 let strategy_arc = Arc::clone(&strategy);
-                let mut strategy_guard = strategy_arc.lock().map_err(|e| Error::MutexPoisoned(e.to_string()))?;
+                let mut strategy_guard = strategy_arc.lock().map_err(|e| Error::Mutex(e.to_string()))?;
 
                 for param_set in par_combinations {
                     let mut transformer = transformers(param_set)?;
@@ -99,15 +99,8 @@ impl<PS: ParameterCombination> Optimizer<PS> {
 
                 Ok(local_results)
             })
-            .collect::<Vec<_>>();
-
-        let mut results = Vec::with_capacity(combinations.len());
-        for chunk_result in chunk_results {
-            let chunk = chunk_result?;
-            results.extend(chunk);
-        }
-
-        Ok(results)
+            .collect::<Result<Vec<_>>>()
+            .map(|chunks| chunks.into_iter().flatten().collect())
     }
 }
 
@@ -175,42 +168,45 @@ fn get_data() -> Vec<Candle> {
 #[test]
 fn optimizer_with_ema_macd() {
     use crate::prelude::*;
-    use ta::*;
     use ta::indicators::{
         ExponentialMovingAverage, MovingAverageConvergenceDivergence, MovingAverageConvergenceDivergenceOutput,
     };
+    use ta::*;
 
     let candles = get_data();
     let initial_balance = 1_000.0;
 
     let opt = Optimizer::<Parameters>::new(candles.clone(), initial_balance, None);
 
-    let result = opt.with(
-        |&(ema_period, m1, m2, m3)| {
-            let ema = ExponentialMovingAverage::new(ema_period).map_err(|e| Error::Msg(e.to_string()))?;
-            let macd = MovingAverageConvergenceDivergence::new(m1, m2, m3).map_err(|e| Error::Msg(e.to_string()))?;
-            Ok((ema, macd))
-        },
-        |bt, (ema, macd), candle| {
-            let close = candle.close();
-            let output = ema.next(close);
-            let MovingAverageConvergenceDivergenceOutput { histogram, .. } = macd.next(close);
-            let balance = bt.free_balance()?;
-            let amount = balance.how_many(2.0).max(21.0);
+    let result = opt
+        .with(
+            |&(ema_period, m1, m2, m3)| {
+                let ema = ExponentialMovingAverage::new(ema_period).map_err(|e| Error::Msg(e.to_string()))?;
+                let macd =
+                    MovingAverageConvergenceDivergence::new(m1, m2, m3).map_err(|e| Error::Msg(e.to_string()))?;
+                Ok((ema, macd))
+            },
+            |bt, (ema, macd), candle| {
+                let close = candle.close();
+                let output = ema.next(close);
+                let MovingAverageConvergenceDivergenceOutput { histogram, .. } = macd.next(close);
+                let balance = bt.free_balance()?;
+                let amount = balance.how_many(2.0).max(21.0);
 
-            if balance > (initial_balance / 2.0) && close > output && histogram > 0.0 {
-                let quantity = amount / close;
-                let order = (
-                    OrderType::Market(close),
-                    OrderType::TrailingStop(close, 2.0),
-                    quantity,
-                    OrderSide::Buy,
-                );
-                bt.place_order(order.into())?;
-            }
-            Ok(())
-        },
-    ).unwrap();
+                if balance > (initial_balance / 2.0) && close > output && histogram > 0.0 {
+                    let quantity = amount / close;
+                    let order = (
+                        OrderType::Market(close),
+                        OrderType::TrailingStop(close, 2.0),
+                        quantity,
+                        OrderSide::Buy,
+                    );
+                    bt.place_order(order.into())?;
+                }
+                Ok(())
+            },
+        )
+        .unwrap();
 
     assert!(!result.is_empty(), "No optimization results returned");
 }

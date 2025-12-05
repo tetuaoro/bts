@@ -30,7 +30,7 @@ fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
 
     let aggregator = TimeframeAggregator;
     bts.run_with_aggregator(&aggregator, |bt, candles| {
-        let candle_one = candles.get(0).ok_or(Error::CandleNotFound)?;
+        let candle_one = candles.first().ok_or(Error::CandleNotFound)?;
         let _candle_four = candles.get(1);
         let _candle_eight = candles.get(2);
 

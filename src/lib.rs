@@ -60,43 +60,36 @@
 //! use bts_rs::prelude::*;
 //! use chrono::DateTime;
 //!
-//! fn main() {
-//!     let candle = CandleBuilder::builder()
-//!         .open(100.0)
-//!         .high(110.0)
-//!         .low(95.0)
-//!         .close(105.0)
-//!         .volume(1.0)
-//!         .bid(0.5)
-//!         .open_time(DateTime::default())
-//!         .close_time(DateTime::default())
-//!         .build()
-//!         .unwrap();
-//!
-//!     // Initialize backtest with \$10,000
-//!     let mut backtest = Backtest::new(vec![candle], 10_000.0, None).unwrap();
-//!
-//!     // Execute a market buy order
-//!     backtest
-//!         .run(|bt, _candle| {
-//!             let order: Order = (OrderType::Market(102.0), 1.0, OrderSide::Buy).into();
-//!             bt.place_order(order).unwrap();
-//!
-//!             // Close the position at \$104.0
-//!             if let Some(position) = bt.positions().last().cloned() {
-//!                 bt.close_position(&position, 104.0, true).unwrap();
-//!             }
-//!
-//!             Ok(())
-//!         })
-//!         .unwrap();
-//!
-//!     // Print performance metrics
-//!     #[cfg(feature = "metrics")]
-//!     {
-//!         let metrics = Metrics::from(&backtest);
-//!         println!("{}", metrics);
-//!     }
+//! let candle = CandleBuilder::builder()
+//!     .open(100.0)
+//!     .high(110.0)
+//!     .low(95.0)
+//!     .close(105.0)
+//!     .volume(1.0)
+//!     .bid(0.5)
+//!     .open_time(DateTime::default())
+//!     .close_time(DateTime::default())
+//!     .build()
+//!     .unwrap();
+//! // Initialize backtest with \$10,000
+//! let mut backtest = Backtest::new(vec![candle], 10_000.0, None).unwrap();
+//! // Execute a market buy order
+//! backtest
+//!     .run(|bt, _candle| {
+//!         let order: Order = (OrderType::Market(102.0), 1.0, OrderSide::Buy).into();
+//!         bt.place_order(order).unwrap();
+//!         // Close the position at \$104.0
+//!         if let Some(position) = bt.positions().last().cloned() {
+//!             bt.close_position(&position, 104.0, true).unwrap();
+//!         }
+//!         Ok(())
+//!     })
+//!     .unwrap();
+//! // Print performance metrics
+//! #[cfg(feature = "metrics")]
+//! {
+//!     let metrics = Metrics::from(&backtest);
+//!     println!("{}", metrics);
 //! }
 //! ```
 //!
@@ -135,34 +128,30 @@
 //! use bts_rs::prelude::*;
 //! use chrono::DateTime;
 //!
-//! fn main() {
-//!     let candle = CandleBuilder::builder()
-//!         .open(100.0)
-//!         .high(110.0)
-//!         .low(95.0)
-//!         .close(105.0)
-//!         .volume(1.0)
-//!         .bid(0.5)
-//!         .open_time(DateTime::default())
-//!         .close_time(DateTime::default())
-//!         .build()
-//!         .unwrap();
-//!
-//!     // Initialize backtest with \$10,000
-//!     let mut backtest = Backtest::new(vec![candle], 10_000.0, None).unwrap();
-//!
-//!     // Execute a market buy order
-//!     backtest
-//!         .run(|bt, _candle| {
-//!             let order: Order = (OrderType::Market(102.0), 1.0, OrderSide::Buy).into();
-//!             match bt.place_order(order) {
-//!                Ok(_) => println!("Order in the pool!"),
-//!                Err(_) => eprintln!("Error to place an order")
-//!             }
-//!             Ok(())
-//!         })
-//!         .unwrap();
-//! }
+//! let candle = CandleBuilder::builder()
+//!     .open(100.0)
+//!     .high(110.0)
+//!     .low(95.0)
+//!     .close(105.0)
+//!     .volume(1.0)
+//!     .bid(0.5)
+//!     .open_time(DateTime::default())
+//!     .close_time(DateTime::default())
+//!     .build()
+//!     .unwrap();
+//! // Initialize backtest with \$10,000
+//! let mut backtest = Backtest::new(vec![candle], 10_000.0, None).unwrap();
+//! // Execute a market buy order
+//! backtest
+//!     .run(|bt, _candle| {
+//!         let order: Order = (OrderType::Market(102.0), 1.0, OrderSide::Buy).into();
+//!         match bt.place_order(order) {
+//!            Ok(_) => println!("Order in the pool!"),
+//!            Err(_) => eprintln!("Error to place an order")
+//!         }
+//!         Ok(())
+//!     })
+//!     .unwrap();
 //! ```
 //!
 //! ## Contributing
@@ -189,7 +178,7 @@ pub mod metrics;
 #[cfg(feature = "optimizer")]
 pub mod optimizer;
 
-/// Draw graphics with a lot of backends: png, svg, html, etc.
+/// Draw for visualizing backtest results and candle charts.
 #[cfg(feature = "draws")]
 pub mod draws;
 
